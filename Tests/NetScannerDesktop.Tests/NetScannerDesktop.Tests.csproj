@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<!--
+		Unit tests for the app's WinUI-free logic. The app itself is a WinUI
+		exe that a test host cannot load, so the pure sources are compiled in
+		directly: the parser, validation, list view, CSV and version logic
+		never touch Microsoft.UI.* or Windows.* on purpose.
+		Run: dotnet test Tests/NetScannerDesktop.Tests
+	-->
+	<PropertyGroup>
+		<TargetFramework>net9.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<IsPackable>false</IsPackable>
+		<RootNamespace>NetScannerDesktop.Tests</RootNamespace>
+		<AppDir>..\..\NetScannerDesktop\</AppDir>
+		<NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<Compile Include="$(AppDir)Services\NetScannerParser.cs" Link="App\NetScannerParser.cs" />
+		<Compile Include="$(AppDir)Services\NetworkValidation.cs" Link="App\NetworkValidation.cs" />
+		<Compile Include="$(AppDir)Services\FilteredSortedView.cs" Link="App\FilteredSortedView.cs" />
+		<Compile Include="$(AppDir)Services\Csv.cs" Link="App\Csv.cs" />
+		<Compile Include="$(AppDir)Services\EngineUpdater.cs" Link="App\EngineUpdater.cs" />
+		<Compile Include="$(AppDir)Services\WellKnownPorts.cs" Link="App\WellKnownPorts.cs" />
+		<Compile Include="$(AppDir)Models\*.cs" Link="App\Models\%(Filename)%(Extension)" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
+		<PackageReference Include="xunit" Version="2.9.3" />
+		<PackageReference Include="xunit.runner.visualstudio" Version="4.0.0" />
+	</ItemGroup>
+
+	<!--
+		EngineUpdater.PinnedVersion comes from AssemblyMetadata; read the
+		same NetScannerVersion the app pins so tests see the real value.
+	-->
+	<Target Name="PinEngineVersionFromApp" BeforeTargets="GetAssemblyAttributes">
+		<XmlPeek XmlInputPath="$(AppDir)NetScannerDesktop.csproj" Query="/Project/PropertyGroup/NetScannerVersion/text()">
+			<Output TaskParameter="Result" PropertyName="NetScannerVersion" />
+		</XmlPeek>
+		<ItemGroup>
+			<AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+				<_Parameter1>NetScannerVersion</_Parameter1>
+				<_Parameter2>$(NetScannerVersion)</_Parameter2>
+			</AssemblyAttribute>
+		</ItemGroup>
+	</Target>
+</Project>

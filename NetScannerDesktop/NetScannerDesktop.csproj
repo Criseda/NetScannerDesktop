@@ -5,35 +5,89 @@
 		<TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
 		<RootNamespace>NetScannerDesktop</RootNamespace>
 		<ApplicationManifest>app.manifest</ApplicationManifest>
+		<ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
 		<Platforms>x86;x64;ARM64</Platforms>
 		<RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
 		<UseWinUI>true</UseWinUI>
 		<Nullable>enable</Nullable>
+		<!-- Lets the raw exe run unpackaged (MddBootstrap); no-op when deployed via MSIX. -->
+		<WindowsAppSdkBootstrapInitialize>true</WindowsAppSdkBootstrapInitialize>
+		<!--
+			NetScanner engine version: the only place it is pinned. fetch-ns.ps1
+			reads it, and the app reads it back via AssemblyMetadata below
+			(EngineUpdater.PinnedVersion). Add the release's SHA-256 to
+			fetch-ns.ps1 when bumping.
+		-->
+		<NetScannerVersion>v1.3.0</NetScannerVersion>
+		<NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>
 		<Manifest Include="$(ApplicationManifest)" />
+		<!-- Window/taskbar icon (AppWindow.SetIcon) and the exe's own icon. -->
+		<Content Include="Assets\AppIcon.ico">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
-		<PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250205002" />
+		<AssemblyMetadata Include="NetScannerVersion" Value="$(NetScannerVersion)" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<None Update="Tools\ns.exe">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
-		<None Update="Tools\README.md">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
+		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+		<PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.251219" />
+		<PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" />
+		<PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260804001" />
 	</ItemGroup>
+
+	<!--
+		The ns.exe engine is downloaded by Scripts/fetch-ns.ps1, not stored in git.
+		It is Content so it lands next to the app exe and flows into the MSIX package.
+	-->
+	<ItemGroup>
+		<Content Include="Assets\Tools\ns.exe">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+		<Content Include="Assets\Tools\ns.version.txt">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+
+	<!--
+		Refresh ns.exe before every build. Scripts/fetch-ns.ps1 fast-paths:
+		it does nothing when the pinned version is already present, and
+		downloads + checksum-verifies otherwise — so the bundled engine
+		can never silently go stale after a version bump.
+		CI with no network should pre-run Scripts/fetch-ns.ps1 instead.
+	-->
+	<Target Name="FetchNetScanner" BeforeTargets="BeforeBuild">
+		<Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\Scripts\fetch-ns.ps1&quot; -Version $(NetScannerVersion)" />
+	</Target>
 
 	<!-- Publish Properties -->
 	<PropertyGroup>
 		<PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
 		<PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
-		<PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
-		<PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
+		<!--
+			No trimming: it strips the CsWinRT COM vtables for collections the
+			XAML binds to (e.g. ObservableCollection<HostResult>), and the
+			published app crashes on the first page even with TrimMode=partial.
+			Revisit together with a CsWinRT AOT-compatibility pass.
+		-->
+		<PublishTrimmed>False</PublishTrimmed>
 	</PropertyGroup>
+
+	<!--
+		Unpackaged publish (Properties/PublishProfiles) leaves out the compiled
+		XAML (.xbf) and the resource index (.pri), so the published exe dies
+		loading MainWindow. The MSIX package project collects them itself;
+		copy them for the plain publish folder too.
+	-->
+	<Target Name="PublishXamlResources" AfterTargets="Publish">
+		<ItemGroup>
+			<_XamlPublishResource Include="$(OutDir)*.pri;$(OutDir)**\*.xbf" />
+		</ItemGroup>
+		<Copy SourceFiles="@(_XamlPublishResource)" DestinationFiles="@(_XamlPublishResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+	</Target>
 </Project>

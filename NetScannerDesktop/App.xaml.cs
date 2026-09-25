@@ -1,23 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices.WindowsRuntime;
-using Windows.ApplicationModel;
-using Windows.ApplicationModel.Activation;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Data;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Navigation;
-using Microsoft.UI.Xaml.Shapes;
-
-// To learn more about WinUI, the WinUI project structure,
-// and more about our project templates, see: http://aka.ms/winui-project-info.
 
 namespace NetScannerDesktop
 {
@@ -27,24 +10,54 @@ namespace NetScannerDesktop
     public partial class App : Application
     {
         /// <summary>
-        /// Initializes the singleton application object.  This is the first line of authored code
-        /// executed, and as such is the logical equivalent of main() or WinMain().
+        /// Crash details land here (%TEMP%\NetScannerDesktop.crash.log): always
+        /// writable, packaged or not, and easy for users to find and attach.
         /// </summary>
+        public static string CrashLogPath { get; } =
+            Path.Combine(Path.GetTempPath(), "NetScannerDesktop.crash.log");
+
         public App()
         {
             this.InitializeComponent();
+            this.UnhandledException += OnUnhandledException;
         }
 
         /// <summary>
-        /// Invoked when the application is launched.
+        /// Last-resort diagnostics. Does not mark the exception handled — the
+        /// app still terminates as before.
         /// </summary>
-        /// <param name="args">Details about the launch request and process.</param>
+        private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e) =>
+            WriteCrashLog("Unhandled", e.Exception);
+
         protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
-            m_window = new MainWindow();
-            m_window.Activate();
+            try
+            {
+                m_window = new MainWindow();
+                m_window.Activate();
+            }
+            catch (Exception ex)
+            {
+                WriteCrashLog("Launch failed", ex);
+                throw;
+            }
+        }
+
+        private static void WriteCrashLog(string label, Exception? exception)
+        {
+            try
+            {
+                File.AppendAllText(CrashLogPath,
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {label}: {exception}{Environment.NewLine}{Environment.NewLine}");
+            }
+            catch
+            {
+                // Logging must never throw: it would replace the real exception.
+            }
         }
 
         private Window? m_window;
+
+        public MainWindow? MainAppWindow => m_window as MainWindow;
     }
 }

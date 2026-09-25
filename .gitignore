@@ -359,5 +359,8 @@ MigrationBackup/
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
 
-# Fody - auto-generated XML schema
-FodyWeavers.xsd
+# NetScanner engine binary (fetched at build time, see Scripts/fetch-ns.ps1).
+# Do not commit ns.exe: it goes stale and bloats the repo.
+NetScannerDesktop/Assets/Tools/ns.exe
+NetScannerDesktop/Assets/Tools/ns.version.txt
+NetScannerDesktop/Assets/Tools/*.zip

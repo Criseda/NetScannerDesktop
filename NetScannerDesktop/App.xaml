@@ -8,9 +8,39 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
-                <!-- Other merged dictionaries here -->
             </ResourceDictionary.MergedDictionaries>
-            <!-- Other app resources here -->
+
+            <!-- Shared by every page: the Windows 11 card surface. -->
+            <Style x:Key="CardBorderStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="{StaticResource OverlayCornerRadius}" />
+                <Setter Property="Padding" Value="20" />
+            </Style>
+
+            <!-- Secondary caption line under a form or list (status, estimates). -->
+            <Style x:Key="HintTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+
+            <!-- Inline validation message; announced by screen readers when it appears. -->
+            <Style x:Key="ErrorTextStyle" TargetType="TextBlock" BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="AutomationProperties.LiveSetting" Value="Assertive" />
+            </Style>
+
+            <!-- Small neutral pill (TCP/ARP source, port category). -->
+            <Style x:Key="ChipBorderStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource ControlFillColorSecondaryBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource ControlStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="{StaticResource ControlCornerRadius}" />
+                <Setter Property="Padding" Value="6,1" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

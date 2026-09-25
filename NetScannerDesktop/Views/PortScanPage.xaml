@@ -1,0 +1,312 @@
+<Page
+    x:Class="NetScannerDesktop.Views.PortScanPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:NetScannerDesktop.Models"
+    NavigationCacheMode="Required"
+    mc:Ignorable="d">
+
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="FilterAccelerator_Invoked" />
+        <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="ScanAccelerator_Invoked" />
+        <KeyboardAccelerator Key="F5" Invoked="ScanAccelerator_Invoked" />
+        <KeyboardAccelerator Key="Escape" Invoked="CancelAccelerator_Invoked" />
+        <KeyboardAccelerator Key="C" Modifiers="Control,Shift" Invoked="CopyAccelerator_Invoked" />
+    </Page.KeyboardAccelerators>
+
+    <ScrollViewer x:Name="PageScroller" VerticalScrollBarVisibility="Disabled" VerticalScrollMode="Disabled">
+        <Grid x:Name="RootGrid" Padding="32,16,32,24" RowSpacing="16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition x:Name="CardsRow" Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Spacing="4">
+                <TextBlock Text="Port scan" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock
+                    Text="Probe one host for open TCP ports. A 1-1024 sweep usually takes a few seconds."
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+
+            <InfoBar
+                Grid.Row="1"
+                IsOpen="{x:Bind ViewModel.IsNoticeOpen, Mode=TwoWay}"
+                Message="{x:Bind ViewModel.NoticeText, Mode=OneWay}"
+                Severity="{x:Bind ViewModel.NoticeSeverity, Mode=OneWay}" />
+
+            <Grid Grid.Row="2" ColumnSpacing="16" RowSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="SetupColumn" Width="360" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="SetupRow" Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Scan setup -->
+                <Border
+                    x:Name="SetupCard"
+                    Grid.Row="0"
+                    Grid.Column="0"
+                    Padding="0"
+                    Style="{StaticResource CardBorderStyle}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Padding="20" Spacing="16">
+                            <TextBlock Text="Scan" Style="{StaticResource SubtitleTextBlockStyle}" />
+
+                            <StackPanel Spacing="4">
+                                <AutoSuggestBox
+                                    x:Name="IpBox"
+                                    Header="Host"
+                                    PlaceholderText="192.168.1.1"
+                                    Text="{x:Bind ViewModel.IpAddress, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    ItemsSource="{x:Bind ViewModel.RecentIps}"
+                                    AutomationProperties.HelpText="{x:Bind ViewModel.IpErrorText, Mode=OneWay}"
+                                    GotFocus="IpBox_GotFocus"
+                                    SuggestionChosen="IpBox_SuggestionChosen"
+                                    QuerySubmitted="IpBox_QuerySubmitted" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.IpErrorText, Mode=OneWay}"
+                                    Style="{StaticResource ErrorTextStyle}"
+                                    Visibility="{x:Bind ViewModel.HasIpError, Mode=OneWay}" />
+                            </StackPanel>
+
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Port range" />
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox
+                                        PlaceholderText="1-1024"
+                                        AutomationProperties.Name="Port range"
+                                        AutomationProperties.HelpText="{x:Bind ViewModel.PortRangeErrorText, Mode=OneWay}"
+                                        Text="{x:Bind ViewModel.PortRange, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                        KeyDown="Input_KeyDown" />
+                                    <DropDownButton Grid.Column="1" Content="Presets" AutomationProperties.Name="Port range presets">
+                                        <DropDownButton.Flyout>
+                                            <MenuFlyout x:Name="PresetsMenu" Placement="BottomEdgeAlignedRight" />
+                                        </DropDownButton.Flyout>
+                                    </DropDownButton>
+                                </Grid>
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.PortRangeErrorText, Mode=OneWay}"
+                                    Style="{StaticResource ErrorTextStyle}"
+                                    Visibility="{x:Bind ViewModel.HasPortRangeError, Mode=OneWay}" />
+                                <TextBlock Text="{x:Bind ViewModel.PortEstimateText, Mode=OneWay}" Style="{StaticResource HintTextStyle}" />
+                            </StackPanel>
+
+                            <NumberBox
+                                Header="Timeout per port (ms)"
+                                Value="{x:Bind ViewModel.TimeoutMs, Mode=TwoWay}"
+                                Minimum="1"
+                                Maximum="60000"
+                                SmallChange="100"
+                                LargeChange="500"
+                                SpinButtonPlacementMode="Compact"
+                                ValidationMode="InvalidInputOverwritten"
+                                PlaceholderText="500 (engine default)"
+                                Description="Raise on slow networks, lower on fast LANs." />
+
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button
+                                        Style="{StaticResource AccentButtonStyle}"
+                                        Command="{x:Bind ViewModel.ScanCommand}"
+                                        ToolTipService.ToolTip="Scan (F5)"
+                                        AutomationProperties.Name="Start port scan">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <FontIcon Glyph="&#xE768;" FontSize="14" />
+                                            <TextBlock Text="Scan" />
+                                        </StackPanel>
+                                    </Button>
+                                    <Button
+                                        Content="Cancel"
+                                        Command="{x:Bind ViewModel.CancelCommand}"
+                                        IsEnabled="{x:Bind ViewModel.IsScanning, Mode=OneWay}"
+                                        ToolTipService.ToolTip="Cancel (Esc)"
+                                        AutomationProperties.Name="Cancel port scan" />
+                                </StackPanel>
+                                <ProgressBar
+                                    IsIndeterminate="{x:Bind ViewModel.IsScanning, Mode=OneWay}"
+                                    Visibility="{x:Bind ViewModel.IsScanning, Mode=OneWay}" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
+                                    Style="{StaticResource HintTextStyle}"
+                                    AutomationProperties.LiveSetting="Polite" />
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+
+                <!-- Results -->
+                <Border
+                    x:Name="ResultsCard"
+                    Grid.Row="0"
+                    Grid.Column="1"
+                    Style="{StaticResource CardBorderStyle}">
+                    <Grid RowSpacing="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock
+                                Text="{x:Bind ViewModel.PortCountTitle, Mode=OneWay}"
+                                Style="{StaticResource SubtitleTextBlockStyle}"
+                                VerticalAlignment="Center"
+                                TextTrimming="CharacterEllipsis" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                <Button
+                                    Command="{x:Bind ViewModel.CopyResultsCommand}"
+                                    ToolTipService.ToolTip="Copy open ports (Ctrl+Shift+C)"
+                                    AutomationProperties.Name="Copy open ports">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xE8C8;" FontSize="14" />
+                                        <TextBlock Text="Copy" />
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{x:Bind ViewModel.ExportCsvCommand}" AutomationProperties.Name="Export results as CSV">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon Glyph="&#xEDE1;" FontSize="14" />
+                                        <TextBlock Text="Export" />
+                                    </StackPanel>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBox
+                            x:Name="FilterBox"
+                            Grid.Row="1"
+                            PlaceholderText="Filter ports or services (Ctrl+F)"
+                            AutomationProperties.Name="Filter ports"
+                            Text="{x:Bind ViewModel.FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <ListView
+                            x:Name="PortsList"
+                            Grid.Row="2"
+                            MinHeight="240"
+                            ItemsSource="{x:Bind ViewModel.VisiblePorts}"
+                            SelectionMode="Single"
+                            DoubleTapped="PortsList_DoubleTapped"
+                            AutomationProperties.Name="Open ports">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="models:PortResult">
+                                    <Grid ColumnSpacing="12" Padding="0,8" AutomationProperties.Name="{x:Bind Display}">
+                                        <Grid.ContextFlyout>
+                                            <MenuFlyout>
+                                                <MenuFlyoutItem Text="Copy host:port" Tag="{x:Bind Port}" Click="CopyHostPort_Click">
+                                                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;" /></MenuFlyoutItem.Icon>
+                                                </MenuFlyoutItem>
+                                                <MenuFlyoutItem Text="Copy port number" Tag="{x:Bind Port}" Click="CopyPort_Click" />
+                                                <MenuFlyoutSeparator />
+                                                <MenuFlyoutItem Text="Open in browser (HTTP)" Tag="{x:Bind Port}" Click="OpenPortHttp_Click">
+                                                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE774;" /></MenuFlyoutItem.Icon>
+                                                </MenuFlyoutItem>
+                                                <MenuFlyoutItem Text="Open in browser (HTTPS)" Tag="{x:Bind Port}" Click="OpenPortHttps_Click">
+                                                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72E;" /></MenuFlyoutItem.Icon>
+                                                </MenuFlyoutItem>
+                                            </MenuFlyout>
+                                        </Grid.ContextFlyout>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="64" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock
+                                            Text="{x:Bind Port}"
+                                            Style="{StaticResource BodyStrongTextBlockStyle}"
+                                            VerticalAlignment="Center" />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            Text="{x:Bind Service}"
+                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            VerticalAlignment="Center"
+                                            TextTrimming="CharacterEllipsis" />
+                                        <Border Grid.Column="2" Style="{StaticResource ChipBorderStyle}">
+                                            <TextBlock
+                                                Text="{x:Bind Category}"
+                                                Style="{StaticResource CaptionTextBlockStyle}"
+                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </Border>
+                                        <HyperlinkButton
+                                            Grid.Column="3"
+                                            Content="Open"
+                                            Tag="{x:Bind Port}"
+                                            Visibility="{x:Bind IsWebPort}"
+                                            Click="OpenWebPort_Click"
+                                            ToolTipService.ToolTip="Open in browser"
+                                            VerticalAlignment="Center"
+                                            Padding="8,2" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <StackPanel
+                            Grid.Row="2"
+                            Visibility="{x:Bind ViewModel.ShowEmptyState, Mode=OneWay}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Margin="0,24"
+                            Spacing="8">
+                            <FontIcon
+                                Glyph="{x:Bind ViewModel.EmptyStateGlyph, Mode=OneWay}"
+                                FontSize="32"
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                            <TextBlock
+                                Text="{x:Bind ViewModel.EmptyStateTitle, Mode=OneWay}"
+                                Style="{StaticResource SubtitleTextBlockStyle}"
+                                HorizontalAlignment="Center" />
+                            <TextBlock
+                                Text="{x:Bind ViewModel.EmptyStateMessage, Mode=OneWay}"
+                                Style="{StaticResource BodyTextBlockStyle}"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                TextAlignment="Center"
+                                MaxWidth="340"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+
+            <Expander Grid.Row="3" Header="Engine output" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                <StackPanel Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Copy log" Command="{x:Bind ViewModel.CopyLogCommand}" />
+                        <TextBlock
+                            Text="{x:Bind ViewModel.LogLineCountText, Mode=OneWay}"
+                            Style="{StaticResource HintTextStyle}"
+                            VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBox
+                        Text="{x:Bind ViewModel.LogText, Mode=OneWay}"
+                        IsReadOnly="True"
+                        AcceptsReturn="True"
+                        TextWrapping="Wrap"
+                        FontFamily="Cascadia Mono, Consolas"
+                        MinHeight="120"
+                        MaxHeight="200"
+                        AutomationProperties.Name="Engine output"
+                        ScrollViewer.VerticalScrollBarVisibility="Auto"
+                        TextChanged="LogBox_TextChanged" />
+                </StackPanel>
+            </Expander>
+        </Grid>
+    </ScrollViewer>
+</Page>
