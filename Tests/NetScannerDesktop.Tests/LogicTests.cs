@@ -210,16 +210,35 @@ public class CsvTests
 public class HostResultTests
 {
     [Fact]
-    public void Name_replaces_ip_as_the_title_once_known()
+    public void Name_replaces_ip_as_the_display_name_once_known()
     {
         var host = new HostResult("192.168.1.10", "TCP", DateTime.Now);
         Assert.Equal("192.168.1.10", host.DisplayName);
-        Assert.False(host.HasSecondaryLine);
+        Assert.Equal("", host.DetailsLine);
 
         host.ApplyDetail(new HostDetail("192.168.1.10", "nas", "00:11:32:11:22:33", "Synology Incorporated"));
 
         Assert.Equal("nas", host.DisplayName);
-        Assert.Equal("192.168.1.10 · Synology Incorporated · 00:11:32:11:22:33", host.SecondaryLine);
+        Assert.Equal("nas · Synology Incorporated · 00:11:32:11:22:33", host.DetailsLine);
+    }
+
+    [Fact]
+    public void Ports_column_distinguishes_never_scanned_from_none_open()
+    {
+        var host = new HostResult("192.168.1.10", "TCP", DateTime.Now);
+        Assert.False(host.HasScannedPorts);
+        Assert.Equal("", host.PortsSummary);
+        Assert.Equal(-1, host.OpenPortCount);
+        Assert.Equal("Scan ports", host.PortsButtonText);
+
+        host.OpenPorts = [];
+        Assert.Equal("None open", host.PortsSummary);
+        Assert.Equal("View ports", host.PortsButtonText);
+
+        host.OpenPorts = [new PortResult(443, "HTTPS"), new PortResult(22, "SSH"), new PortResult(80, "HTTP"), new PortResult(8123, "Home Assistant")];
+        Assert.Equal("22 SSH, 80 HTTP, 443 HTTPS, +1 more", host.PortsSummary);
+        Assert.Equal("22 SSH, 80 HTTP, 443 HTTPS, 8123 Home Assistant", host.PortsDetail);
+        Assert.Equal(4, host.OpenPortCount);
     }
 
     [Theory]
@@ -228,13 +247,130 @@ public class HostResultTests
     [InlineData("00:11:32")]
     [InlineData("tcp")]
     [InlineData("SSH")]
+    [InlineData("8123")]
     public void Filter_matches_every_visible_field(string filter)
     {
         var host = new HostResult("192.168.1.10", "TCP", DateTime.Now);
         host.ApplyDetail(new HostDetail("192.168.1.10", "nas", "00:11:32:11:22:33", "Synology Incorporated"));
-        host.UpdateScannedPorts("Open: 22 (SSH)");
+        host.OpenPorts = [new PortResult(22, "SSH"), new PortResult(80), new PortResult(443), new PortResult(8123)];
 
         Assert.True(host.Matches(filter));
         Assert.False(host.Matches("printer"));
+    }
+}
+
+public class PortResultTests
+{
+    [Fact]
+    public void Engine_names_fill_every_column()
+    {
+        var rdp = new PortResult(3389, "RDP", "ms-wbt-server", "Remote Desktop Protocol (Windows)", "remote", HasServiceData: true);
+
+        Assert.Equal("RDP", rdp.ServiceText);
+        Assert.True(rdp.IsIanaAssigned);
+        Assert.False(rdp.ShowIanaUnassigned);
+        Assert.Equal("Remote access", rdp.CategoryLabel);
+        Assert.Equal("3389 — RDP", rdp.Display);
+        Assert.False(rdp.IsWebPort);
+    }
+
+    [Fact]
+    public void Common_use_ports_show_unassigned_iana()
+    {
+        var ha = new PortResult(8123, "Home Assistant", null, "Home Assistant web UI", "home", HasServiceData: true);
+
+        Assert.False(ha.IsIanaAssigned);
+        Assert.True(ha.ShowIanaUnassigned);
+        Assert.Equal("Smart home", ha.CategoryLabel);
+    }
+
+    [Fact]
+    public void Unknown_only_when_the_engine_looked()
+    {
+        var looked = new PortResult(40000, HasServiceData: true);
+        Assert.Equal("Unknown", looked.ServiceText);
+        Assert.True(looked.ShowServicePlaceholder);
+        Assert.True(looked.ShowIanaUnassigned);
+
+        // An engine older than v1.4 reports numbers only: leave the cells blank.
+        var old = new PortResult(40000);
+        Assert.Equal("", old.ServiceText);
+        Assert.False(old.ShowServicePlaceholder);
+        Assert.False(old.ShowIanaUnassigned);
+        Assert.False(old.HasCategory);
+    }
+
+    [Theory]
+    [InlineData(80, "HTTP", "http", "http")]
+    [InlineData(443, "HTTPS", "https", "https")]
+    [InlineData(8443, "HTTPS alt", "pcsync-https", "https")]
+    [InlineData(5001, "Web app (HTTPS)", "commplex-link", "https")]
+    [InlineData(8080, "HTTP alt", "http-alt", "http")]
+    public void Web_ports_open_with_the_right_scheme(int port, string service, string iana, string scheme)
+    {
+        var p = new PortResult(port, service, iana, null, "web", HasServiceData: true);
+        Assert.True(p.IsWebPort);
+        Assert.Equal(scheme, p.WebScheme);
+    }
+
+    [Theory]
+    [InlineData("rdp")]
+    [InlineData("wbt")]
+    [InlineData("remote access")]
+    [InlineData("desktop")]
+    [InlineData("338")]
+    public void Filter_matches_number_names_description_and_category(string filter) =>
+        Assert.True(new PortResult(3389, "RDP", "ms-wbt-server", "Remote Desktop Protocol", "remote", true).Matches(filter));
+
+    [Fact]
+    public void Description_is_blank_when_it_repeats_the_name()
+    {
+        Assert.Null(new PortResult(1824, "metrics-pas", "metrics-pas", "metrics-pas", null, true).DescriptionText);
+        Assert.Equal("Remote Framebuffer", new PortResult(5900, "VNC", "rfb", "Remote Framebuffer", "remote", true).DescriptionText);
+    }
+
+    [Fact]
+    public void Unknown_categories_are_capitalised_not_hidden() =>
+        Assert.Equal("Gaming", PortResult.LabelFor("gaming"));
+}
+
+public class TableSortTests
+{
+    private sealed record Row(string Ip, string? Name, int? Count);
+
+    private static readonly IComparer<Row> ByIp = Comparer<Row>.Create((a, b) => string.CompareOrdinal(a.Ip, b.Ip));
+
+    private static readonly Row[] Rows =
+    [
+        new("10.0.0.3", "printer", 2),
+        new("10.0.0.1", null, null),
+        new("10.0.0.2", "Laptop", 5),
+        new("10.0.0.4", null, 0),
+    ];
+
+    [Fact]
+    public void Blank_names_sort_last_in_both_directions()
+    {
+        Assert.Equal(["10.0.0.2", "10.0.0.3", "10.0.0.1", "10.0.0.4"],
+            Rows.Order(TableSort.ByText<Row>(r => r.Name, descending: false, ByIp)).Select(r => r.Ip));
+        Assert.Equal(["10.0.0.3", "10.0.0.2", "10.0.0.1", "10.0.0.4"],
+            Rows.Order(TableSort.ByText<Row>(r => r.Name, descending: true, ByIp)).Select(r => r.Ip));
+    }
+
+    [Fact]
+    public void Missing_values_sort_last_in_both_directions()
+    {
+        Assert.Equal(["10.0.0.4", "10.0.0.3", "10.0.0.2", "10.0.0.1"],
+            Rows.Order(TableSort.ByValue<Row, int>(r => r.Count, descending: false, ByIp)).Select(r => r.Ip));
+        Assert.Equal(["10.0.0.2", "10.0.0.3", "10.0.0.4", "10.0.0.1"],
+            Rows.Order(TableSort.ByValue<Row, int>(r => r.Count, descending: true, ByIp)).Select(r => r.Ip));
+    }
+
+    [Fact]
+    public void Header_glyph_marks_only_the_sorted_column()
+    {
+        Assert.Equal("\uE70E", TableSort.Glyph("ip", "ip", descending: false));
+        Assert.Equal("\uE70D", TableSort.Glyph("ip", "ip", descending: true));
+        Assert.Equal("", TableSort.Glyph("name", "ip", descending: false));
     }
 }

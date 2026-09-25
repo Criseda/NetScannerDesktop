@@ -19,8 +19,10 @@ namespace NetScannerDesktop.ViewModels;
 /// </summary>
 public sealed partial class PortScanViewModel : ScanViewModelBase
 {
-    private readonly FilteredSortedView<PortResult> portView =
-        new(Comparer<PortResult>.Create((a, b) => a.Port.CompareTo(b.Port)));
+    private static readonly IComparer<PortResult> ByPort =
+        Comparer<PortResult>.Create((a, b) => a.Port.CompareTo(b.Port));
+
+    private readonly FilteredSortedView<PortResult> portView = new(ByPort);
 
     public const int LargePortScanConfirmThreshold = 10000;
 
@@ -37,7 +39,7 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
     {
     }
 
-    public PortScanViewModel(INetScannerService scanner) : base(scanner)
+    public PortScanViewModel(INetScannerService scanner) : base(scanner, defaultSortColumn: "port")
     {
         StatusText = "Enter a host to start.";
         VisiblePorts.CollectionChanged += (_, _) => NotifyEmptyStateChanged();
@@ -60,18 +62,18 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
     /// <summary>Every open port of the shown result.</summary>
     public IReadOnlyList<PortResult> OpenPorts => portView.Source;
 
-    /// <summary>Open ports matching the filter, ascending. Bind the list to this.</summary>
+    /// <summary>Open ports matching the filter, in the chosen order. Bind the list to this.</summary>
     public ObservableCollection<PortResult> VisiblePorts => portView.View;
 
     public int PortCount => OpenPorts.Count;
 
     public string PortCountTitle => PortCount == 1 ? "1 open port" : $"{PortCount:N0} open ports";
 
-    private void AddPort(int port)
+    private void AddPort(PortResult port)
     {
-        if (OpenPorts.All(p => p.Port != port))
+        if (OpenPorts.All(p => p.Port != port.Port))
         {
-            portView.Add(new PortResult(port));
+            portView.Add(port);
             OnPropertyChanged(nameof(PortCount));
             OnPropertyChanged(nameof(PortCountTitle));
         }
@@ -90,11 +92,20 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
     partial void OnFilterTextChanged(string value)
     {
         string f = value.Trim();
-        portView.SetFilter(f.Length == 0 ? _ => true : p =>
-            p.Port.ToString(CultureInfo.InvariantCulture).Contains(f, StringComparison.Ordinal) ||
-            p.Service.Contains(f, StringComparison.OrdinalIgnoreCase) ||
-            p.Category.Contains(f, StringComparison.OrdinalIgnoreCase));
+        portView.SetFilter(f.Length == 0 ? _ => true : p => p.Matches(f));
     }
+
+    protected override void ApplySort() => portView.SetComparer(PortComparer(SortColumn, SortDescending));
+
+    /// <summary>Comparer for a Port scan table column; blank cells last, ties by port number.</summary>
+    internal static IComparer<PortResult> PortComparer(string column, bool descending) => column switch
+    {
+        "service" => TableSort.ByText<PortResult>(p => p.Service, descending, ByPort),
+        "category" => TableSort.ByText<PortResult>(p => p.CategoryLabel, descending, ByPort),
+        "iana" => TableSort.ByText<PortResult>(p => p.Iana, descending, ByPort),
+        "description" => TableSort.ByText<PortResult>(p => p.Description, descending, ByPort),
+        _ => TableSort.ByValue<PortResult, int>(p => p.Port, descending),
+    };
 
     // Form -----------------------------------------------------------------
 
@@ -232,7 +243,7 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
         AppSettings.PushRecent(AppSettings.PortRecent, target);
         RefreshRecent();
 
-        var portProgress = new Progress<int>(port =>
+        var portProgress = new Progress<PortResult>(port =>
         {
             AddPort(port);
             RefreshProgress();
@@ -279,8 +290,12 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
 
         string host = resultTarget ?? IpAddress.Trim();
         string csv = Csv.Format(
-            VisiblePorts.Select(p => new[] { host, p.Port.ToString(CultureInfo.InvariantCulture), p.Service }),
-            new[] { "ip_address", "port", "service" });
+            VisiblePorts.Select(p => new[]
+            {
+                host, p.Port.ToString(CultureInfo.InvariantCulture), p.Service ?? string.Empty,
+                p.Iana ?? string.Empty, p.CategoryLabel, p.Description ?? string.Empty,
+            }),
+            new[] { "ip_address", "port", "service", "iana_service", "category", "description" });
 
         await SaveCsvAsync("ports", csv, $"{VisiblePorts.Count:N0} ports");
     }
@@ -303,9 +318,9 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
 
         if (ScanHistoryService.TryGet(cleanIp, out var history) && history != null)
         {
-            foreach (PortResult port in history.GetPortResults())
+            foreach (PortResult port in history.OpenPorts)
             {
-                AddPort(port.Port);
+                AddPort(port);
             }
 
             if (!string.IsNullOrEmpty(history.PortRange))

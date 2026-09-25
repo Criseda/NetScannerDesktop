@@ -12,21 +12,24 @@ namespace NetScannerDesktop.Views;
 
 /// <summary>
 /// Host discovery page. The XAML binds to <see cref="ViewModel"/>; this
-/// file handles the subnet box, context actions, and the two-column /
-/// stacked switch.
+/// file handles the subnet box, context actions, and layout sizing.
 /// </summary>
 public sealed partial class DiscoveryPage : Page, IResponsivePage
 {
+    /// <summary>Below this width the host table scrolls sideways instead of squeezing its columns.</summary>
+    private const double HostsTableMinWidth = 960;
+
     public DiscoveryViewModel ViewModel { get; } = new();
 
     // Last mode requested by the shell. Reapplied on Loaded so a page
-    // opened while the window is already narrow starts stacked.
+    // opened while the window is already narrow starts compact.
     private bool wideLayout = true;
 
     public DiscoveryPage()
     {
         InitializeComponent();
         Loaded += (_, _) => ApplyLayoutMode();
+        PageHelpers.FitTableToViewport(HostsTableScroller, HostsTable, HostsTableMinWidth);
         ViewModel.ConfirmLargeScanAsync = message => PageHelpers.ConfirmLargeScanAsync(XamlRoot, message);
         ViewModel.SaveFileAsync = PageHelpers.SaveFileAsync;
 
@@ -142,7 +145,8 @@ public sealed partial class DiscoveryPage : Page, IResponsivePage
         {
             string summary = string.Join(" - ", new[]
             {
-                host.IpAddress, host.DetailsLine, $"found via {host.Source} at {host.FoundAtShort}", host.PortsSummary,
+                host.IpAddress, host.DetailsLine, $"found via {host.Source} at {host.FoundAtShort}",
+                host.HasScannedPorts ? $"open ports: {(host.PortsDetail.Length > 0 ? host.PortsDetail : "none")}" : null,
             }.Where(s => !string.IsNullOrEmpty(s)));
 
             ViewModel.CopyToClipboard(summary, $"Copied details for {host.IpAddress}.");
@@ -204,9 +208,9 @@ public sealed partial class DiscoveryPage : Page, IResponsivePage
     // Layout -------------------------------------------------------------------
 
     /// <summary>
-    /// Called by the shell: side-by-side cards when true, stacked when false.
-    /// Done in code so the breakpoint uses the window's logical width, the
-    /// same measurement that drives the nav pane.
+    /// Called by the shell with the window's logical width class. The
+    /// toolbar wraps and the table scrolls on their own; only the page
+    /// margins change.
     /// </summary>
     public void SetWideLayout(bool wide)
     {
@@ -217,7 +221,5 @@ public sealed partial class DiscoveryPage : Page, IResponsivePage
         }
     }
 
-    private void ApplyLayoutMode() =>
-        PageHelpers.ApplyCardLayout(wideLayout, PageScroller, RootGrid, CardsRow, SetupRow,
-            SetupColumn, SetupCard, ResultsCard, HostsList);
+    private void ApplyLayoutMode() => PageHelpers.ApplyPagePadding(wideLayout, RootGrid);
 }

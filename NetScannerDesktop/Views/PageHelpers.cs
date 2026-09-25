@@ -8,7 +8,7 @@ namespace NetScannerDesktop.Views;
 
 /// <summary>
 /// View plumbing shared by the Discovery and Port scan pages, which are
-/// laid out the same way: a setup card beside (or above) a results card.
+/// laid out the same way: a scan toolbar above a full-width results table.
 /// </summary>
 internal static class PageHelpers
 {
@@ -56,33 +56,18 @@ internal static class PageHelpers
         });
     }
 
-    /// <summary>
-    /// Wide: cards side by side, the page fits the window and only the
-    /// results list scrolls. Narrow: cards stacked, the whole page scrolls
-    /// and the list gets a fixed height so it stays usable.
-    /// </summary>
-    public static void ApplyCardLayout(
-        bool wide,
-        ScrollViewer pageScroller,
-        Grid rootGrid,
-        RowDefinition cardsRow,
-        RowDefinition setupRow,
-        ColumnDefinition setupColumn,
-        FrameworkElement setupCard,
-        FrameworkElement resultsCard,
-        ListViewBase resultsList)
-    {
-        pageScroller.VerticalScrollBarVisibility = wide ? ScrollBarVisibility.Disabled : ScrollBarVisibility.Auto;
-        pageScroller.VerticalScrollMode = wide ? ScrollMode.Disabled : ScrollMode.Auto;
-        rootGrid.Padding = wide ? new Thickness(32, 16, 32, 24) : new Thickness(20, 12, 20, 20);
-        cardsRow.Height = wide ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
-        setupRow.Height = wide ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
-        setupColumn.Width = wide ? new GridLength(360) : new GridLength(1, GridUnitType.Star);
-        resultsList.MaxHeight = wide ? double.PositiveInfinity : 480;
+    /// <summary>Roomier margins on a wide window, tighter ones beside the icon rail.</summary>
+    public static void ApplyPagePadding(bool wide, Grid rootGrid) =>
+        rootGrid.Padding = wide ? new Thickness(24, 12, 24, 20) : new Thickness(16, 8, 16, 16);
 
-        Grid.SetColumnSpan(setupCard, wide ? 1 : 2);
-        Grid.SetRow(resultsCard, wide ? 0 : 1);
-        Grid.SetColumn(resultsCard, wide ? 1 : 0);
-        Grid.SetColumnSpan(resultsCard, wide ? 1 : 2);
-    }
+    /// <summary>
+    /// Keep a results table exactly as wide as its horizontal scroller, but
+    /// never narrower than <paramref name="minWidth"/>: star columns share
+    /// the full width on a big window, and a small one scrolls sideways
+    /// instead of crushing the columns. (A scroller measures its content
+    /// with unlimited width, so without this the table would size to its
+    /// longest text rather than to the window.)
+    /// </summary>
+    public static void FitTableToViewport(ScrollViewer scroller, FrameworkElement table, double minWidth) =>
+        scroller.SizeChanged += (_, e) => table.Width = Math.Max(minWidth, e.NewSize.Width);
 }

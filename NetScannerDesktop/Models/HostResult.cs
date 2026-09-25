@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -9,7 +10,7 @@ namespace NetScannerDesktop.Models;
 /// <see cref="Source"/> says how it was found: TCP probe, ARP harvest (the
 /// host was quiet on TCP) or ICMP ping. Hostname, MAC and vendor arrive
 /// later, after the sweep, when device identification is on. Also tracks
-/// the port scan summary if ports have been scanned for this host.
+/// the open ports if this host has been port scanned.
 /// </summary>
 public sealed partial class HostResult : ObservableObject
 {
@@ -20,39 +21,39 @@ public sealed partial class HostResult : ObservableObject
     public string FoundAtShort => FoundAt.ToString("T");
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(DetailsLine), nameof(HasDetails), nameof(DisplayName), nameof(SecondaryLine), nameof(HasSecondaryLine))]
+    [NotifyPropertyChangedFor(nameof(DetailsLine), nameof(DisplayName))]
     private string? hostname;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(DetailsLine), nameof(HasDetails), nameof(SecondaryLine), nameof(HasSecondaryLine))]
+    [NotifyPropertyChangedFor(nameof(DetailsLine))]
     private string? macAddress;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(DetailsLine), nameof(HasDetails), nameof(SecondaryLine), nameof(HasSecondaryLine))]
+    [NotifyPropertyChangedFor(nameof(DetailsLine))]
     private string? vendor;
 
     /// <summary>Hostname when known, else the IP: what a person calls this device.</summary>
     public string DisplayName => Hostname ?? IpAddress;
 
-    /// <summary>Secondary line under the IP, e.g. "nas-storage · Synology Incorporated · 00:11:32:…".</summary>
+    /// <summary>"nas-storage · Synology Incorporated · 00:11:32:…", for copying.</summary>
     public string DetailsLine => string.Join(" · ",
         new[] { Hostname, Vendor, MacAddress }.Where(s => !string.IsNullOrEmpty(s)));
 
-    public bool HasDetails => DetailsLine.Length > 0;
-
-    /// <summary>Line under <see cref="DisplayName"/>: the IP when a name took its place, then vendor and MAC.</summary>
-    public string SecondaryLine => string.Join(" · ",
-        new[] { Hostname is null ? null : IpAddress, Vendor, MacAddress }.Where(s => !string.IsNullOrEmpty(s)));
-
-    public bool HasSecondaryLine => SecondaryLine.Length > 0;
-
+    /// <summary>Open ports from the last port scan of this host; null when never scanned.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PortsButtonText))]
-    private string? portsSummary;
+    [NotifyPropertyChangedFor(nameof(HasScannedPorts), nameof(PortsSummary), nameof(PortsDetail), nameof(OpenPortCount), nameof(PortsButtonText))]
+    private IReadOnlyList<PortResult>? openPorts;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(PortsButtonText))]
-    private bool hasScannedPorts;
+    public bool HasScannedPorts => OpenPorts is not null;
+
+    /// <summary>Table cell: "22 SSH, 80 HTTP, +2 more", "None open", or empty before a port scan.</summary>
+    public string PortsSummary => OpenPorts is null ? string.Empty : PortResult.Summarize(OpenPorts);
+
+    /// <summary>Every open port, for the tooltip, the filter and export.</summary>
+    public string PortsDetail => OpenPorts is null ? string.Empty : PortResult.ListAll(OpenPorts);
+
+    /// <summary>Sort key for the ports column: -1 before a port scan, so unscanned hosts sort last.</summary>
+    public int OpenPortCount => OpenPorts?.Count ?? -1;
 
     public string PortsButtonText => HasScannedPorts ? "View ports" : "Scan ports";
 
@@ -70,16 +71,10 @@ public sealed partial class HostResult : ObservableObject
         Vendor = detail.Vendor;
     }
 
-    public void UpdateScannedPorts(string? summary)
-    {
-        PortsSummary = summary;
-        HasScannedPorts = !string.IsNullOrEmpty(summary);
-    }
-
     /// <summary>Everything searchable about the host, for the filter box.</summary>
     public bool Matches(string filter) =>
         IpAddress.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
         Source.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
         DetailsLine.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-        (PortsSummary?.Contains(filter, StringComparison.OrdinalIgnoreCase) ?? false);
+        PortsDetail.Contains(filter, StringComparison.OrdinalIgnoreCase);
 }

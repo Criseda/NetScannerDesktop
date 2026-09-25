@@ -50,8 +50,8 @@ $ExpectedSha256ByVersion = @{
     "v1.0.0" = "ecbc843dcc37942bf1b28ecaa111b7e6c120aee840899a8ea0077344dfc74263"
     "v1.1.0" = "d6e778bff05fb5c7db55313488a5df3fe3b56105e2e8daab4070f29f5a092c84"
     "v1.2.2" = "0b843db6e39f24849b6ef47302f7877ccd396022fab500378156445ba716b264"
-    # Built for Criseda/NetScanner#53; the release must upload this exact zip.
     "v1.3.0" = "ff857ac662742996a71471c74b3a4e6275dcda7dbc913239cef27a38b9f21e1b"
+    "v1.4.0" = "4636bfb26b6bff26f111bddc1dabb4e5377f8b2f08c475be6de3905688c97222"
 }
 
 $ExePath = Join-Path $OutputDir "ns.exe"

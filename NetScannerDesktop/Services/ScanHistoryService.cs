@@ -16,34 +16,26 @@ public sealed class HostPortHistory
     public string IpAddress { get; set; } = string.Empty;
     public DateTime ScannedAt { get; set; } = DateTime.Now;
     public string PortRange { get; set; } = string.Empty;
-    public List<int> OpenPortNumbers { get; set; } = new();
 
-    public List<PortResult> GetPortResults() =>
-        OpenPortNumbers.OrderBy(p => p).Select(p => new PortResult(p)).ToList();
+    /// <summary>Open ports with the names the engine gave them, ascending.</summary>
+    public List<PortResult> OpenPorts { get; set; } = new();
 
-    public string SummaryText
+    /// <summary>
+    /// Port numbers only, as history.json stored them before ports had
+    /// names. Read once and folded into <see cref="OpenPorts"/> on load;
+    /// never written again.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<int>? OpenPortNumbers { get; set; }
+
+    internal void MigrateLegacyPorts()
     {
-        get
+        if (OpenPorts.Count == 0 && OpenPortNumbers is { Count: > 0 } numbers)
         {
-            if (OpenPortNumbers.Count == 0)
-            {
-                return "No open ports";
-            }
-
-            var items = OpenPortNumbers.Take(4).Select(p =>
-            {
-                string svc = WellKnownPorts.GetServiceName(p);
-                return string.IsNullOrEmpty(svc) ? p.ToString() : $"{p} ({svc})";
-            });
-
-            string text = "Open: " + string.Join(", ", items);
-            if (OpenPortNumbers.Count > 4)
-            {
-                text += $", +{OpenPortNumbers.Count - 4} more";
-            }
-
-            return text;
+            OpenPorts = numbers.Order().Select(p => new PortResult(p)).ToList();
         }
+
+        OpenPortNumbers = null;
     }
 }
 
@@ -78,7 +70,7 @@ public static class ScanHistoryService
             IpAddress = cleanIp,
             ScannedAt = DateTime.Now,
             PortRange = portRange,
-            OpenPortNumbers = openPorts.Select(p => p.Port).OrderBy(p => p).ToList()
+            OpenPorts = openPorts.OrderBy(p => p.Port).ToList()
         };
 
         lock (SyncRoot)
@@ -144,6 +136,7 @@ public static class ScanHistoryService
                         {
                             if (!string.IsNullOrWhiteSpace(item.IpAddress))
                             {
+                                item.MigrateLegacyPorts();
                                 History[item.IpAddress] = item;
                             }
                         }
@@ -196,8 +189,11 @@ public static class ScanHistoryService
 
 /// <summary>
 /// Source-generated serializer for history.json: no runtime reflection,
-/// so it keeps working in trimmed Release builds.
+/// so it keeps working in trimmed Release builds. Computed (get-only)
+/// properties such as <see cref="PortResult.CategoryLabel"/> stay out of
+/// the file.
 /// </summary>
+[JsonSourceGenerationOptions(IgnoreReadOnlyProperties = true)]
 [JsonSerializable(typeof(List<HostPortHistory>))]
 internal sealed partial class HistoryJsonContext : JsonSerializerContext
 {

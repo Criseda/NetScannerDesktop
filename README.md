@@ -89,10 +89,11 @@ unpackaged on machines that only have that runtime, so bump it deliberately.
 - `NetScannerDesktop/Services/` — engine runner (`NetScannerService`), output
   parser (`EngineOutputParser` in `NetScannerParser.cs`), engine updater,
   validation, settings/history storage, CSV export, `FilteredSortedView`
+  and `TableSort` (the sortable result tables)
 - `NetScannerDesktop/ViewModels/` — `ScanViewModelBase` (shared scan
   plumbing), `DiscoveryViewModel`, `PortScanViewModel`, `SettingsViewModel`
 - `NetScannerDesktop/Views/` — `DiscoveryPage`, `PortScanPage`,
-  `SettingsPage` (includes About), `PageHelpers`
+  `SettingsPage` (includes About), `PageHelpers`, `WrapPanel` (scan toolbars)
 - `Tests/NetScannerDesktop.Tests/` — xUnit tests for the WinUI-free code
 
 App data lives in `%LOCALAPPDATA%\NetScanner\` (`settings.json`,

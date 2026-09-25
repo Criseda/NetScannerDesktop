@@ -15,7 +15,8 @@ public sealed record HostFoundEvent(HostResult Host) : EngineEvent;
 
 public sealed record HostDetailEvent(HostDetail Detail) : EngineEvent;
 
-public sealed record PortFoundEvent(int Port) : EngineEvent;
+/// <summary>One open port, named when the engine supports it (NetScanner v1.4+).</summary>
+public sealed record PortFoundEvent(PortResult Result) : EngineEvent;
 
 /// <summary>Closing recap of a port scan (empty list = "No open ports found").</summary>
 public sealed record PortSummaryEvent(IReadOnlyList<int> OpenPorts) : EngineEvent;
@@ -31,7 +32,9 @@ public sealed record EngineErrorEvent(string Message) : EngineEvent;
 /// <para>
 /// JSON mode (<c>--json</c>, NetScanner v1.3.0+) reads one object
 /// per line: <c>start</c>, <c>host</c>, <c>host_detail</c>, <c>port</c>,
-/// <c>summary</c>, <c>error</c>. Text mode covers v1.1–v1.2 output:
+/// <c>summary</c>, <c>error</c>. From v1.4.0 <c>port</c> also carries
+/// <c>service</c>, <c>iana</c>, <c>description</c> and <c>category</c>.
+/// Text mode covers v1.1–v1.2 output:
 /// <c>Host 192.168.1.10 is online (arp)</c>, <c>Open port: 80</c>,
 /// <c>Open ports: 80, 443</c>, <c>No open ports found</c>,
 /// <c>12 hosts up (2.1s)</c>, <c>NetScanner: ...</c> errors, and the
@@ -97,7 +100,10 @@ public sealed partial class EngineOutputParser
                 "host_detail" when Str(root, "ip") is { } ip =>
                     new HostDetailEvent(new HostDetail(ip, Str(root, "hostname"), Str(root, "mac"), Str(root, "vendor"))),
                 "port" when root.TryGetProperty("port", out JsonElement p) && p.TryGetInt32(out int port) && IsPort(port) =>
-                    new PortFoundEvent(port),
+                    new PortFoundEvent(new PortResult(port, Str(root, "service"), Str(root, "iana"),
+                        Str(root, "description"), Str(root, "category"),
+                        // Present (even as null) only on engines that name ports.
+                        HasServiceData: root.TryGetProperty("service", out _))),
                 "summary" when root.TryGetProperty("open_ports", out JsonElement ports) =>
                     new PortSummaryEvent(ports.EnumerateArray()
                         .Select(e => e.TryGetInt32(out int n) ? n : 0).Where(IsPort).Distinct().ToList()),
@@ -145,6 +151,10 @@ public sealed partial class EngineOutputParser
     [GeneratedRegex(@"^(?<count>\d+) hosts? up \((?<secs>[\d.]+)s\)$")]
     private static partial Regex SummaryLine();
 
+    /// <summary>"Open port: 80", or "Open port: 80 (HTTP)" from v1.4+ text output.</summary>
+    [GeneratedRegex(@"^Open port: (?<port>\d+)(?: \((?<name>.+)\))?$")]
+    private static partial Regex OpenPortLine();
+
     [GeneratedRegex(@"^IP\s+(?<cols>(?:HOSTNAME|MAC|MANUFACTURER)(?:\s+(?:HOSTNAME|MAC|MANUFACTURER))*)$")]
     private static partial Regex TableHeader();
 
@@ -172,10 +182,10 @@ public sealed partial class EngineOutputParser
                 host.Groups["ip"].Value, host.Groups["arp"].Success ? "ARP" : textHostSource, DateTime.Now));
         }
 
-        if (line.StartsWith("Open port:", StringComparison.Ordinal) &&
-            int.TryParse(line.AsSpan("Open port:".Length).Trim(), out int port) && IsPort(port))
+        if (OpenPortLine().Match(line) is { Success: true } open &&
+            int.TryParse(open.Groups["port"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out int port) && IsPort(port))
         {
-            return new PortFoundEvent(port);
+            return new PortFoundEvent(new PortResult(port, open.Groups["name"].Success ? open.Groups["name"].Value : null));
         }
 
         if (line.StartsWith("Open ports:", StringComparison.Ordinal))

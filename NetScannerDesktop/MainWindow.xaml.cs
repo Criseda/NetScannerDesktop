@@ -22,8 +22,8 @@ public sealed partial class MainWindow : Window
     private const int MinWindowWidth = 640;
     private const int MinWindowHeight = 540;
 
-    // Below this window width the pages stack their cards vertically
-    // and the nav pane collapses to its icon rail to make room.
+    // Below this window width the nav pane collapses to its icon rail
+    // and the pages tighten their margins to leave room for the tables.
     private const double WideLayoutMinWidth = 1100;
 
     private double lastWidth = DefaultWindowWidth;
@@ -215,8 +215,8 @@ public sealed partial class MainWindow : Window
 
     /// <summary>
     /// One place drives both the nav pane and the page layout from the
-    /// window width (logical pixels). A wide window gets side-by-side cards
-    /// with an open pane, a narrow one stacked cards with the icon rail.
+    /// window width (logical pixels). A wide window gets an open pane and
+    /// roomy margins, a narrow one the icon rail and tight margins.
     /// </summary>
     private void UpdateResponsiveLayout(double windowWidth, bool force = false)
     {
@@ -272,7 +272,7 @@ public sealed partial class MainWindow : Window
     }
 }
 
-/// <summary>Pages that switch between side-by-side and stacked cards.</summary>
+/// <summary>Pages that adapt their layout to the window width class.</summary>
 public interface IResponsivePage
 {
     void SetWideLayout(bool wide);
