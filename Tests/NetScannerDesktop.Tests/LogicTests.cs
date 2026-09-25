@@ -241,6 +241,52 @@ public class HostResultTests
         Assert.Equal(4, host.OpenPortCount);
     }
 
+    [Fact]
+    public void Copy_all_details_lists_only_known_fields_in_column_order()
+    {
+        var host = new HostResult("192.168.1.10", "ARP", DateTime.Now);
+        Assert.False(host.HasHostname || host.HasMacAddress || host.HasVendor || host.HasOpenPorts);
+        Assert.Equal(
+            $"IP address: 192.168.1.10{Environment.NewLine}Found via: ARP{Environment.NewLine}Found at: {host.FoundAtShort}",
+            host.AllDetailsText);
+
+        host.OpenPorts = [];
+        Assert.False(host.HasOpenPorts);
+        Assert.Contains("Open ports: None open", host.AllDetailsText);
+
+        host.ApplyDetail(new HostDetail("192.168.1.10", "nas", "00:11:32:11:22:33", "Synology Incorporated"));
+        host.OpenPorts = [new PortResult(80, "HTTP"), new PortResult(22, "SSH")];
+        Assert.True(host.HasHostname && host.HasMacAddress && host.HasVendor && host.HasOpenPorts);
+        Assert.Equal(string.Join(Environment.NewLine,
+            "Name: nas",
+            "IP address: 192.168.1.10",
+            "Manufacturer: Synology Incorporated",
+            "MAC address: 00:11:32:11:22:33",
+            "Found via: ARP",
+            "Open ports: 22 SSH, 80 HTTP",
+            $"Found at: {host.FoundAtShort}"), host.AllDetailsText);
+    }
+
+    [Fact]
+    public void Hosts_table_puts_open_ports_last_and_leaves_unknowns_blank()
+    {
+        var nas = new HostResult("192.168.1.10", "TCP", DateTime.Now);
+        nas.ApplyDetail(new HostDetail("192.168.1.10", "nas", "00:11:32:11:22:33", "Synology"));
+        nas.OpenPorts = [new PortResult(22, "SSH")];
+        var quiet = new HostResult("192.168.1.2", "ARP", DateTime.Now);
+
+        string[] lines = HostResult.FormatTable([nas, quiet]).Split(Environment.NewLine);
+
+        Assert.Equal(3, lines.Length);
+        Assert.StartsWith("Name  IP address    Manufacturer  MAC address", lines[0]);
+        Assert.EndsWith("Open ports", lines[0]);
+        Assert.StartsWith("nas   192.168.1.10  Synology      00:11:32:11:22:33", lines[1]);
+        Assert.EndsWith("22 SSH", lines[1]);
+        // Blank name, vendor and MAC cells keep their column widths (4, 12, 17).
+        Assert.StartsWith(new string(' ', 4 + 2) + "192.168.1.2" + new string(' ', 1 + 2 + 12 + 2 + 17 + 2) + "ARP", lines[2]);
+        Assert.EndsWith(quiet.FoundAtShort, lines[2]); // never port scanned: no trailing padding
+    }
+
     [Theory]
     [InlineData("192.168.1")]
     [InlineData("synology")]
@@ -272,6 +318,45 @@ public class PortResultTests
         Assert.Equal("Remote access", rdp.CategoryLabel);
         Assert.Equal("3389 — RDP", rdp.Display);
         Assert.False(rdp.IsWebPort);
+    }
+
+    [Fact]
+    public void Copied_details_skip_unknown_fields_and_repeated_descriptions()
+    {
+        var ssh = new PortResult(22, "SSH", "ssh", "The Secure Shell (SSH) Protocol", "remote", HasServiceData: true);
+        Assert.Equal(string.Join(Environment.NewLine,
+            "Host: 192.168.1.10",
+            "Port: 22",
+            "Service: SSH",
+            "Category: Remote access",
+            "IANA name: ssh",
+            "Description: The Secure Shell (SSH) Protocol"), ssh.DetailsText("192.168.1.10"));
+
+        var unknown = new PortResult(40000, HasServiceData: true);
+        Assert.Equal($"Host: 192.168.1.10{Environment.NewLine}Port: 40000", unknown.DetailsText("192.168.1.10"));
+
+        var http = new PortResult(80, "HTTP", "http", "HTTP", "web", HasServiceData: true);
+        Assert.DoesNotContain("Description", http.DetailsText("h"));
+    }
+
+    [Fact]
+    public void Ports_table_names_the_host_and_aligns_columns()
+    {
+        string[] lines = PortResult.FormatTable("192.168.1.10",
+        [
+            new PortResult(22, "SSH", "ssh", "The Secure Shell (SSH) Protocol", "remote", HasServiceData: true),
+            new PortResult(8123, "Home Assistant", null, "Home Assistant web UI", "home", HasServiceData: true),
+            new PortResult(40000, HasServiceData: true),
+        ]).Split(Environment.NewLine);
+
+        Assert.Equal(
+        [
+            "Open ports on 192.168.1.10",
+            "Port   Service         Category       IANA name  Description",
+            "22     SSH             Remote access  ssh        The Secure Shell (SSH) Protocol",
+            "8123   Home Assistant  Smart home                Home Assistant web UI",
+            "40000",
+        ], lines);
     }
 
     [Fact]

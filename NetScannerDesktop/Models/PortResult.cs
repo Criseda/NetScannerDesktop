@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using NetScannerDesktop.Services;
 
 namespace NetScannerDesktop.Models;
 
@@ -96,6 +97,32 @@ public sealed record PortResult(
         "home" => "Smart home",
         _ => char.ToUpperInvariant(category[0]) + category[1..],
     };
+
+    /// <summary>
+    /// Row "Copy > All details": one labelled line per known field, in
+    /// table column order.
+    /// </summary>
+    public string DetailsText(string host) => string.Join(Environment.NewLine, new[]
+    {
+        $"Host: {host}",
+        $"Port: {Port}",
+        Line("Service", Service),
+        Line("Category", CategoryLabel),
+        Line("IANA name", Iana),
+        Line("Description", DescriptionText),
+    }.Where(line => line is not null));
+
+    private static string? Line(string label, string? value) =>
+        string.IsNullOrEmpty(value) ? null : $"{label}: {value}";
+
+    /// <summary>"Copy > Everything (as a table)": the ports table as aligned text, under a line naming the host.</summary>
+    public static string FormatTable(string host, IEnumerable<PortResult> ports) =>
+        $"Open ports on {host}" + Environment.NewLine + TextTable.Format(
+            ["Port", "Service", "Category", "IANA name", "Description"],
+            ports.Select(p => new[]
+            {
+                p.Port.ToString(), p.Service ?? string.Empty, p.CategoryLabel, p.Iana ?? string.Empty, p.DescriptionText ?? string.Empty,
+            }));
 
     /// <summary>
     /// One-line summary of a host's open ports for the Discovery table:

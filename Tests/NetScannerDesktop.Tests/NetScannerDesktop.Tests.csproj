@@ -2,8 +2,8 @@
 	<!--
 		Unit tests for the app's WinUI-free logic. The app itself is a WinUI
 		exe that a test host cannot load, so the pure sources are compiled in
-		directly: the parser, validation, list view, CSV and version logic
-		never touch Microsoft.UI.* or Windows.* on purpose.
+		directly: the parser, validation, list view, CSV, text table and
+		version logic never touch Microsoft.UI.* or Windows.* on purpose.
 		Run: dotnet test Tests/NetScannerDesktop.Tests
 	-->
 	<PropertyGroup>
@@ -22,6 +22,7 @@
 		<Compile Include="$(AppDir)Services\Csv.cs" Link="App\Csv.cs" />
 		<Compile Include="$(AppDir)Services\EngineUpdater.cs" Link="App\EngineUpdater.cs" />
 		<Compile Include="$(AppDir)Services\TableSort.cs" Link="App\TableSort.cs" />
+		<Compile Include="$(AppDir)Services\TextTable.cs" Link="App\TextTable.cs" />
 		<Compile Include="$(AppDir)Models\*.cs" Link="App\Models\%(Filename)%(Extension)" />
 	</ItemGroup>
 

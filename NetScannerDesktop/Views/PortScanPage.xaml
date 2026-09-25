@@ -208,15 +208,24 @@
                         AutomationProperties.Name="Filter ports"
                         Text="{x:Bind ViewModel.FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-                        <Button
+                        <!-- Main part copies the port numbers; the arrow has host:port lines and the whole table. -->
+                        <SplitButton
                             Command="{x:Bind ViewModel.CopyResultsCommand}"
-                            ToolTipService.ToolTip="Copy open ports (Ctrl+Shift+C)"
-                            AutomationProperties.Name="Copy open ports">
+                            ToolTipService.ToolTip="Copy port numbers (Ctrl+Shift+C). The arrow has more."
+                            AutomationProperties.Name="Copy port numbers">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <FontIcon Glyph="&#xE8C8;" FontSize="14" />
                                 <TextBlock Text="Copy" />
                             </StackPanel>
-                        </Button>
+                            <SplitButton.Flyout>
+                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                    <MenuFlyoutItem Text="Port numbers" Command="{x:Bind ViewModel.CopyResultsCommand}" KeyboardAcceleratorTextOverride="Ctrl+Shift+C" />
+                                    <MenuFlyoutItem Text="host:port lines" Command="{x:Bind ViewModel.CopyHostPortsCommand}" />
+                                    <MenuFlyoutSeparator />
+                                    <MenuFlyoutItem Text="Everything (as a table)" Command="{x:Bind ViewModel.CopyTableCommand}" />
+                                </MenuFlyout>
+                            </SplitButton.Flyout>
+                        </SplitButton>
                         <Button Command="{x:Bind ViewModel.ExportCsvCommand}" AutomationProperties.Name="Export results as CSV">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <FontIcon Glyph="&#xEDE1;" FontSize="14" />
@@ -313,16 +322,22 @@
                             ItemContainerStyle="{StaticResource TableRowContainerStyle}"
                             SelectionMode="Single"
                             DoubleTapped="PortsList_DoubleTapped"
+                            KeyDown="PortsList_KeyDown"
                             AutomationProperties.Name="Open ports">
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:PortResult">
                                     <Border Style="{StaticResource TableRowBorderStyle}">
                                         <Border.ContextFlyout>
                                             <MenuFlyout>
-                                                <MenuFlyoutItem Text="Copy host:port" Tag="{x:Bind Port}" Click="CopyHostPort_Click">
-                                                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;" /></MenuFlyoutItem.Icon>
-                                                </MenuFlyoutItem>
-                                                <MenuFlyoutItem Text="Copy port number" Tag="{x:Bind Port}" Click="CopyPort_Click" />
+                                                <!-- Same shape as the Discovery row menu; unknown fields are greyed out. -->
+                                                <MenuFlyoutSubItem Text="Copy">
+                                                    <MenuFlyoutSubItem.Icon><FontIcon Glyph="&#xE8C8;" /></MenuFlyoutSubItem.Icon>
+                                                    <MenuFlyoutItem Text="host:port" Tag="{x:Bind Port}" Click="CopyHostPort_Click" KeyboardAcceleratorTextOverride="Ctrl+C" />
+                                                    <MenuFlyoutItem Text="Port number" Tag="{x:Bind Port}" Click="CopyPort_Click" />
+                                                    <MenuFlyoutItem Text="Service" Tag="{x:Bind Port}" Click="CopyService_Click" IsEnabled="{x:Bind HasService}" />
+                                                    <MenuFlyoutSeparator />
+                                                    <MenuFlyoutItem Text="All details" Tag="{x:Bind Port}" Click="CopyPortDetails_Click" />
+                                                </MenuFlyoutSubItem>
                                                 <MenuFlyoutSeparator />
                                                 <MenuFlyoutItem Text="Open in browser (HTTP)" Tag="{x:Bind Port}" Click="OpenPortHttp_Click">
                                                     <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE774;" /></MenuFlyoutItem.Icon>
