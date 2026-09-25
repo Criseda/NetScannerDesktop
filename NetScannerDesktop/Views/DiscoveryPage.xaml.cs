@@ -33,6 +33,11 @@ public sealed partial class DiscoveryPage : Page
         };
         ViewModel.ConfirmLargeScanAsync = ConfirmLargeScanAsync;
         ViewModel.SaveFileAsync = SaveFileAsync;
+
+        // Subscribed for the page's lifetime (it is cached): a scan keeps
+        // running while the user is on another page, and the badge is how
+        // they see it progress.
+        ViewModel.Hosts.CollectionChanged += OnHostsChanged;
     }
 
     private async System.Threading.Tasks.Task<string?> SaveFileAsync(string name, string ext, string content)
@@ -218,14 +223,7 @@ public sealed partial class DiscoveryPage : Page
         base.OnNavigatedTo(e);
         await ViewModel.LoadAsync();
         ViewModel.RefreshHistoryForHosts();
-        ViewModel.Hosts.CollectionChanged += OnHostsChanged;
         UpdateBadge();
-    }
-
-    protected override void OnNavigatedFrom(NavigationEventArgs e)
-    {
-        base.OnNavigatedFrom(e);
-        ViewModel.Hosts.CollectionChanged -= OnHostsChanged;
     }
 
     private void OnHostsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) =>

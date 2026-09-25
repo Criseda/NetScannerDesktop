@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -55,34 +56,73 @@ public interface INetScannerService
 /// </summary>
 public sealed class NetScannerService : INetScannerService
 {
+    private static readonly ConcurrentDictionary<(string Path, DateTime Written), string?> VersionCache = new();
+
+    /// <summary>
+    /// Picks the newest compatible engine among the bundled copy (MSBuild
+    /// Content / MSIX package) and the per-user self-update. Newest wins so
+    /// an app update that bundles a newer engine is never shadowed by an
+    /// older self-updated copy. Falls back to <c>ns</c> on PATH (e.g.
+    /// <c>zig build</c> devs).
+    /// </summary>
     public string ResolveExePath()
     {
-        // 1. Per-user self-update (EngineUpdater). Wins over the bundled
-        // copy because the MSIX install folder is read-only.
-        string userCopy = EngineUpdater.UserExePath;
-        if (File.Exists(userCopy))
-        {
-            return userCopy;
-        }
-
-        // 2. Next to the app binary (MSBuild Content + MSIX package).
-        string besideApp = Path.GetFullPath(Path.Combine(
+        string bundled = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory, "Assets", "Tools", "ns.exe"));
-        if (File.Exists(besideApp))
+
+        string? best = null;
+        string? bestVersion = null;
+        foreach (string candidate in new[] { bundled, EngineUpdater.UserExePath })
         {
-            return besideApp;
+            if (!File.Exists(candidate))
+            {
+                continue;
+            }
+
+            string? version = ReadInstalledVersion(candidate);
+            if (version is not null && !EngineUpdater.IsCompatible(version))
+            {
+                continue;
+            }
+
+            // An unreadable version only wins when nothing else is present.
+            if (best is null ||
+                (version is not null && (bestVersion is null || EngineUpdater.IsNewerThan(version, bestVersion))))
+            {
+                best = candidate;
+                bestVersion = version;
+            }
         }
 
-        // 3. Legacy location from the first prototype, kept as a fallback.
-        string legacy = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory, "Tools", "ns.exe"));
-        if (File.Exists(legacy))
-        {
-            return legacy;
-        }
+        return best ?? "ns";
+    }
 
-        // 4. Let Windows resolve `ns` from PATH (e.g. `zig build` devs).
-        return "ns";
+    /// <summary>
+    /// Version of an installed ns.exe: its ns.version.txt sidecar when
+    /// present (written by fetch-ns.ps1 and EngineUpdater), otherwise one
+    /// <c>--version</c> probe cached per file timestamp.
+    /// </summary>
+    private static string? ReadInstalledVersion(string exePath)
+    {
+        try
+        {
+            string sidecar = Path.Combine(Path.GetDirectoryName(exePath)!, EngineUpdater.VersionFileName);
+            if (File.Exists(sidecar))
+            {
+                string text = File.ReadAllText(sidecar).Trim();
+                if (text.Length > 0)
+                {
+                    return text;
+                }
+            }
+
+            return VersionCache.GetOrAdd((exePath, File.GetLastWriteTimeUtc(exePath)),
+                key => EngineUpdater.ProbeVersion(key.Path));
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public async Task<string> GetVersionAsync(CancellationToken cancellationToken)

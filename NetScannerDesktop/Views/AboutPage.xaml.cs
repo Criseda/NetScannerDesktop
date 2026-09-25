@@ -39,19 +39,9 @@ public sealed partial class AboutPage : Page
             EngineVersionRun.Text = "not found";
         }
 
-        // Best-effort latest-release note. Silent when offline.
-        try
-        {
-            EngineRelease? latest =
-                await EngineUpdater.GetLatestReleaseAsync(CancellationToken.None);
-            if (latest is not null)
-            {
-                LatestVersionRun.Text = latest.Tag;
-            }
-        }
-        catch
-        {
-        }
+        // Best-effort latest-release note, shared with Discovery's check. Silent when offline.
+        EngineRelease? latest = await EngineUpdater.GetLatestReleaseAsync();
+        LatestVersionRun.Text = latest?.Tag ?? "unknown";
     }
 
     private static string GetAppVersion()

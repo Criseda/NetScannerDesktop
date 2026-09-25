@@ -1,23 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices.WindowsRuntime;
-using Windows.ApplicationModel;
-using Windows.ApplicationModel.Activation;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Data;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Navigation;
-using Microsoft.UI.Xaml.Shapes;
-
-// To learn more about WinUI, the WinUI project structure,
-// and more about our project templates, see: http://aka.ms/winui-project-info.
 
 namespace NetScannerDesktop
 {
@@ -27,9 +10,12 @@ namespace NetScannerDesktop
     public partial class App : Application
     {
         /// <summary>
-        /// Initializes the singleton application object.  This is the first line of authored code
-        /// executed, and as such is the logical equivalent of main() or WinMain().
+        /// Crash details land here (%TEMP%\NetScannerDesktop.crash.log): always
+        /// writable, packaged or not, and easy for users to find and attach.
         /// </summary>
+        public static string CrashLogPath { get; } =
+            Path.Combine(Path.GetTempPath(), "NetScannerDesktop.crash.log");
+
         public App()
         {
             this.InitializeComponent();
@@ -37,30 +23,12 @@ namespace NetScannerDesktop
         }
 
         /// <summary>
-        /// Last-resort diagnostics: persist the crash details where the user
-        /// can find them (%TEMP%\NetScannerDesktop.crash.log). Does not mark
-        /// the exception handled — the app still terminates as before.
+        /// Last-resort diagnostics. Does not mark the exception handled — the
+        /// app still terminates as before.
         /// </summary>
-        private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
-        {
-            try
-            {
-                string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "NetScannerDesktop.crash.log");
-                string detail =
-                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Unhandled: {e.Exception}{Environment.NewLine}" +
-                    $"Message: {e.Message}{Environment.NewLine}{Environment.NewLine}";
-                File.AppendAllText(path, detail);
-            }
-            catch
-            {
-                // Logging must never throw.
-            }
-        }
+        private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e) =>
+            WriteCrashLog("Unhandled", e.Exception);
 
-        /// <summary>
-        /// Invoked when the application is launched.
-        /// </summary>
-        /// <param name="args">Details about the launch request and process.</param>
         protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
             try
@@ -70,8 +38,21 @@ namespace NetScannerDesktop
             }
             catch (Exception ex)
             {
-                File.WriteAllText("C:\\Users\\ilaur\\git\\NetScannerDesktop\\launch_error.txt", ex.ToString());
+                WriteCrashLog("Launch failed", ex);
                 throw;
+            }
+        }
+
+        private static void WriteCrashLog(string label, Exception? exception)
+        {
+            try
+            {
+                File.AppendAllText(CrashLogPath,
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {label}: {exception}{Environment.NewLine}{Environment.NewLine}");
+            }
+            catch
+            {
+                // Logging must never throw: it would replace the real exception.
             }
         }
 

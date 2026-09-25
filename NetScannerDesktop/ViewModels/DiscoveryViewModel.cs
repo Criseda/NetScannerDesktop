@@ -64,6 +64,7 @@ public sealed partial class DiscoveryViewModel : ObservableObject
 
         ScanHistoryService.HistoryCleared += () =>
         {
+            RefreshRecent();
             foreach (var h in Hosts)
             {
                 h.UpdateScannedPorts(null);
@@ -290,8 +291,21 @@ public sealed partial class DiscoveryViewModel : ObservableObject
 
     // Startup ---------------------------------------------------------------
 
+    private bool loaded;
+
+    /// <summary>
+    /// One-time startup: restore the form, probe the engine, check for an
+    /// update. The page is cached, so navigating back must not repeat this
+    /// (it would overwrite what the user typed and re-open dismissed bars).
+    /// </summary>
     public async Task LoadAsync()
     {
+        if (loaded)
+        {
+            return;
+        }
+
+        loaded = true;
         IsFirstRunTipOpen = !AppSettings.GetBool(AppSettings.SeenTeachingTip);
 
         if (LocalSubnets.Count == 0)
@@ -379,28 +393,25 @@ public sealed partial class DiscoveryViewModel : ObservableObject
 
     private async Task CheckEngineUpdateAsync()
     {
-        try
+        // Null when offline or on an API hiccup: stay silent, keep the current engine.
+        EngineRelease? latest = await EngineUpdater.GetLatestReleaseAsync();
+        if (latest is null)
         {
-            EngineRelease? latest =
-                await EngineUpdater.GetLatestReleaseAsync(CancellationToken.None);
-            if (latest is null)
-            {
-                return;
-            }
-
-            LatestEngineVersion = latest.Tag;
-            if (EngineUpdater.IsNewerThan(latest.Tag, EngineVersion))
-            {
-                pendingRelease = latest;
-                UpdateAvailableText =
-                    $"ns {latest.Tag} is available (you have {EngineVersion}).";
-                IsUpdateAvailable = true;
-                UpdateEngineCommand.NotifyCanExecuteChanged();
-            }
+            return;
         }
-        catch
+
+        LatestEngineVersion = latest.Tag;
+
+        // Only offer what UpdateAsync will accept: same major version and a
+        // published checksum. Anything else arrives with an app update.
+        if (EngineUpdater.IsNewerThan(latest.Tag, EngineVersion) &&
+            EngineUpdater.IsCompatible(latest.Tag) &&
+            latest.Sha256 is not null)
         {
-            // Offline or API hiccup: stay silent, keep the bundled engine.
+            pendingRelease = latest;
+            UpdateAvailableText =
+                $"ns {latest.Tag} is available (you have {EngineVersion}).";
+            IsUpdateAvailable = true;
         }
     }
 

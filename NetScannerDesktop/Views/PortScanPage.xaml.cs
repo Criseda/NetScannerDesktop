@@ -32,6 +32,9 @@ public sealed partial class PortScanPage : Page
         };
         ViewModel.ConfirmLargeScanAsync = ConfirmLargeScanAsync;
         ViewModel.SaveFileAsync = SaveFileAsync;
+
+        // Page is cached; keep the badge live while a scan runs in the background.
+        ViewModel.OpenPorts.CollectionChanged += OnPortsChanged;
     }
 
     private async System.Threading.Tasks.Task<string?> SaveFileAsync(string name, string ext, string content)
@@ -197,15 +200,7 @@ public sealed partial class PortScanPage : Page
         }
 
         await ViewModel.LoadAsync();
-        ViewModel.OpenPorts.CollectionChanged -= OnPortsChanged;
-        ViewModel.OpenPorts.CollectionChanged += OnPortsChanged;
         UpdateBadge();
-    }
-
-    protected override void OnNavigatedFrom(NavigationEventArgs e)
-    {
-        base.OnNavigatedFrom(e);
-        ViewModel.OpenPorts.CollectionChanged -= OnPortsChanged;
     }
 
     private void OnPortsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e) =>

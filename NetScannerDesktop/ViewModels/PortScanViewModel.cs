@@ -52,6 +52,7 @@ public sealed partial class PortScanViewModel : ObservableObject
 
         ScanHistoryService.HistoryCleared += () =>
         {
+            RefreshRecent();
             if (!IsScanning)
             {
                 OpenPorts.Clear();
@@ -511,8 +512,17 @@ public sealed partial class PortScanViewModel : ObservableObject
     /// <summary>
     /// Restore last session + recent IPs. Falls back to Settings defaults.
     /// </summary>
+    private bool loaded;
+
     public async Task LoadAsync()
     {
+        // The page is cached: restore once, never over the user's edits.
+        if (loaded)
+        {
+            return;
+        }
+
+        loaded = true;
         string savedIp = AppSettings.GetString(AppSettings.PortIp);
         string savedRange = AppSettings.GetString(AppSettings.PortRange);
         string savedTimeout = AppSettings.GetString(AppSettings.PortTimeout);
