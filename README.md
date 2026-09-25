@@ -6,6 +6,26 @@ WinUI 3 frontend for [NetScanner](https://github.com/Criseda/NetScanner)
 hosts (optionally with hostnames, MAC addresses and manufacturers), then
 scan any of them for open ports.
 
+## Download
+
+Get the latest from [Releases](https://github.com/Criseda/NetScannerDesktop/releases/latest):
+
+- **`NetScanner-Setup-<version>-x64.exe`** (recommended): installs for your
+  user account only (no admin prompt), adds a Start menu entry, upgrades in
+  place, and uninstalls from Settings > Apps.
+- **`NetScanner-<version>-x64-portable.zip`**: extract anywhere and run
+  `NetScanner\NetScannerDesktop.exe`.
+
+Both include everything they need (no .NET or Windows App Runtime install)
+and run on Windows 10 1809+ and Windows 11, x64 or ARM64 (via emulation).
+The downloads are not code-signed yet, so Windows SmartScreen may show
+"Windows protected your PC": choose **More info > Run anyway**. Checksums
+are in `SHA256SUMS.txt` on each release.
+
+To build a release yourself: `pwsh -File Scripts/build-release.ps1`
+(needs Visual Studio with the Windows App SDK workload and
+[Inno Setup 6](https://jrsoftware.org/isinfo.php)).
+
 ## Engine binary (not in git)
 
 `ns.exe` is downloaded at build time, never committed:
