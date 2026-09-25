@@ -55,6 +55,7 @@ public sealed partial class MainWindow : Window
 
         SizeChanged += (_, args) => UpdateResponsiveLayout(args.Size.Width);
         ContentFrame.Navigated += ContentFrame_Navigated;
+        RootGrid.ActualThemeChanged += (_, _) => UpdateResizeBackground();
         ApplySavedTheme();
 
         NavigateTo("Discovery");
@@ -95,7 +96,84 @@ public sealed partial class MainWindow : Window
             ElementTheme.Dark => TitleBarTheme.Dark,
             _ => TitleBarTheme.UseDefaultAppMode,
         };
+        UpdateResizeBackground();
     }
+
+    private nint resizeBrush;
+    private SubclassProc? eraseProc;
+
+    /// <summary>
+    /// When the window grows faster than XAML re-renders, the newly exposed
+    /// strip used to flash black: WinUI answers WM_ERASEBKGND without
+    /// painting (and a class background brush is never used). Paint that
+    /// strip ourselves with the Mica base colour of the current theme, so a
+    /// fast resize shows plain app background until the content catches
+    /// up. Measured: black resize frames went from 24/27 to 0/27.
+    /// </summary>
+    private void UpdateResizeBackground()
+    {
+        // Mica base: #202020 dark, #F3F3F3 light. COLORREF is 0x00BBGGRR.
+        uint color = RootGrid.ActualTheme == ElementTheme.Light ? 0x00F3F3F3u : 0x00202020u;
+        nint old = resizeBrush;
+        resizeBrush = CreateSolidBrush(color);
+        if (old != 0)
+        {
+            DeleteObject(old);
+        }
+
+        if (eraseProc is null)
+        {
+            nint hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            eraseProc = EraseSubclass; // field keeps the delegate alive for native code
+            SetWindowSubclass(hwnd, eraseProc, 1, 0);
+            Closed += (_, _) =>
+            {
+                RemoveWindowSubclass(hwnd, eraseProc, 1);
+                DeleteObject(resizeBrush);
+                resizeBrush = 0;
+            };
+        }
+    }
+
+    private nint EraseSubclass(nint hWnd, uint msg, nuint wParam, nint lParam, nuint id, nuint data)
+    {
+        const uint WM_ERASEBKGND = 0x0014;
+        if (msg == WM_ERASEBKGND && resizeBrush != 0 && GetClientRect(hWnd, out RECT rect))
+        {
+            FillRect((nint)wParam, ref rect, resizeBrush);
+            return 1;
+        }
+
+        return DefSubclassProc(hWnd, msg, wParam, lParam);
+    }
+
+    private delegate nint SubclassProc(nint hWnd, uint msg, nuint wParam, nint lParam, nuint id, nuint data);
+
+    private struct RECT
+    {
+        public int Left, Top, Right, Bottom;
+    }
+
+    [System.Runtime.InteropServices.DllImport("comctl32.dll")]
+    private static extern bool SetWindowSubclass(nint hWnd, SubclassProc proc, nuint id, nuint data);
+
+    [System.Runtime.InteropServices.DllImport("comctl32.dll")]
+    private static extern bool RemoveWindowSubclass(nint hWnd, SubclassProc proc, nuint id);
+
+    [System.Runtime.InteropServices.DllImport("comctl32.dll")]
+    private static extern nint DefSubclassProc(nint hWnd, uint msg, nuint wParam, nint lParam);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern bool GetClientRect(nint hWnd, out RECT rect);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern int FillRect(nint hdc, ref RECT rect, nint brush);
+
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+    private static extern nint CreateSolidBrush(uint color);
+
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+    private static extern bool DeleteObject(nint handle);
 
     private void AppTitleBar_PaneToggleRequested(TitleBar sender, object args) =>
         Nav.IsPaneOpen = !Nav.IsPaneOpen;
