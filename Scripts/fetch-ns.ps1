@@ -9,6 +9,7 @@
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File Scripts/fetch-ns.ps1
 #   powershell -File Scripts/fetch-ns.ps1 -Version v1.2.2 -Force
+#   powershell -File Scripts/fetch-ns.ps1 -ZipPath ..\NetScanner\zig-out\releases\windows.zip
 #
 # Output:
 #   NetScannerDesktop/Assets/Tools/ns.exe (gitignored, copied to build output)
@@ -23,7 +24,12 @@ param(
     [string]$OutputDir = (Join-Path $PSScriptRoot "..\NetScannerDesktop\Assets\Tools"),
 
     # Re-download even if the right version is already present.
-    [switch]$Force
+    [switch]$Force,
+
+    # Install from a local windows.zip instead of downloading, e.g. a
+    # release built with `zig build release` before it is published on
+    # GitHub. Same SHA-256 check as a download: pin the zip's hash first.
+    [string]$ZipPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -44,6 +50,8 @@ $ExpectedSha256ByVersion = @{
     "v1.0.0" = "ecbc843dcc37942bf1b28ecaa111b7e6c120aee840899a8ea0077344dfc74263"
     "v1.1.0" = "d6e778bff05fb5c7db55313488a5df3fe3b56105e2e8daab4070f29f5a092c84"
     "v1.2.2" = "0b843db6e39f24849b6ef47302f7877ccd396022fab500378156445ba716b264"
+    # Built for Criseda/NetScanner#53; the release must upload this exact zip.
+    "v1.3.0" = "ff857ac662742996a71471c74b3a4e6275dcda7dbc913239cef27a38b9f21e1b"
 }
 
 $ExePath = Join-Path $OutputDir "ns.exe"
@@ -61,7 +69,7 @@ function Get-InstalledVersion {
 }
 
 # Skip work when the right binary is already there.
-if (-not $Force) {
+if (-not $Force -and -not $ZipPath) {
     $installed = Get-InstalledVersion
     if ($installed -eq $Version -and (Test-Path $VersionFile)) {
         Write-Host "ns.exe $Version already present at $ExePath, skipping download."
@@ -81,17 +89,22 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("netscanner-" + [System.Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 try {
-    $zipPath = Join-Path $tempDir "windows.zip"
-    Write-Host "Downloading NetScanner $Version from $DownloadUrl ..."
+    $tempZip = Join-Path $tempDir "windows.zip"
     # Plain .NET instead of Invoke-WebRequest / Get-FileHash / Expand-Archive:
     # when MSBuild runs from a PowerShell 7 terminal, the Windows PowerShell
     # that runs this script inherits pwsh's PSModulePath and cannot
     # autoload those cmdlets' modules.
-    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-    (New-Object System.Net.WebClient).DownloadFile($DownloadUrl, $zipPath)
+    if ($ZipPath) {
+        Write-Host "Installing NetScanner $Version from $ZipPath ..."
+        Copy-Item -Path $ZipPath -Destination $tempZip
+    } else {
+        Write-Host "Downloading NetScanner $Version from $DownloadUrl ..."
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        (New-Object System.Net.WebClient).DownloadFile($DownloadUrl, $tempZip)
+    }
 
     $sha = [System.Security.Cryptography.SHA256]::Create()
-    $stream = [System.IO.File]::OpenRead($zipPath)
+    $stream = [System.IO.File]::OpenRead($tempZip)
     try {
         $actualHash = ([System.BitConverter]::ToString($sha.ComputeHash($stream)) -replace '-', '').ToLowerInvariant()
     } finally {
@@ -105,7 +118,7 @@ try {
     Write-Host "Checksum OK."
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
-    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, (Join-Path $tempDir "out"))
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($tempZip, (Join-Path $tempDir "out"))
 
     # The zip contains ns.exe at its root. Fail loudly if the layout changes.
     $downloadedExe = Get-ChildItem -Path $tempDir -Recurse -Filter "ns.exe" | Select-Object -First 1

@@ -23,6 +23,13 @@ version is pinned; the script and the app both read it. To bump it, change
 that value and add the release's `windows.zip` SHA-256 to
 `$ExpectedSha256ByVersion` in `Scripts/fetch-ns.ps1`.
 
+To use an engine that is built but not yet published (e.g. from a
+NetScanner PR), install its zip locally; the pinned SHA-256 still applies:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File Scripts/fetch-ns.ps1 -ZipPath ..\NetScanner\zig-out\releases\windows.zip
+```
+
 At runtime the app can also install a newer engine per-user (Discovery
 offers it). Updates are SHA-256 checked against the GitHub release digest
 before they run, limited to the pinned major version, and the app always

@@ -18,7 +18,7 @@
 			(EngineUpdater.PinnedVersion). Add the release's SHA-256 to
 			fetch-ns.ps1 when bumping.
 		-->
-		<NetScannerVersion>v1.2.2</NetScannerVersion>
+		<NetScannerVersion>v1.3.0</NetScannerVersion>
 		<NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
 	</PropertyGroup>
 

@@ -29,7 +29,7 @@ public sealed record EngineErrorEvent(string Message) : EngineEvent;
 /// per scan: text mode is stateful (the <c>--resolve</c> table rows only
 /// mean something after its header).
 /// <para>
-/// JSON mode (<c>--json</c>, NetScanner newer than v1.2.2) reads one object
+/// JSON mode (<c>--json</c>, NetScanner v1.3.0+) reads one object
 /// per line: <c>start</c>, <c>host</c>, <c>host_detail</c>, <c>port</c>,
 /// <c>summary</c>, <c>error</c>. Text mode covers v1.1–v1.2 output:
 /// <c>Host 192.168.1.10 is online (arp)</c>, <c>Open port: 80</c>,
