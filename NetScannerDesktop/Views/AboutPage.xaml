@@ -1,0 +1,108 @@
+<Page
+    x:Class="NetScannerDesktop.Views.AboutPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <Style x:Key="CardBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="20" />
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer>
+        <StackPanel Padding="32,24,32,32" Spacing="16" MaxWidth="800" HorizontalAlignment="Left">
+
+            <StackPanel Spacing="4">
+                <TextBlock Text="About NetScanner" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock
+                    Text="A Windows frontend for NetScanner, a fast scanner for your local network that needs no extra tools and no special privileges."
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+
+            <Border Style="{StaticResource CardBorderStyle}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="What it does" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <TextBlock TextWrapping="Wrap">
+                        <Run FontWeight="SemiBold" Text="Discovery" />
+                        <Run Text=" finds live hosts on your subnet. By default it combines fast TCP probes with a pass over the local ARP table, so quiet hosts that answer ARP but drop TCP still show up. A full /24 sweep usually takes about 2 seconds." />
+                    </TextBlock>
+                    <TextBlock TextWrapping="Wrap">
+                        <Run FontWeight="SemiBold" Text="Port scan" />
+                        <Run Text=" probes one host for open TCP ports across a range you choose." />
+                    </TextBlock>
+                    <TextBlock TextWrapping="Wrap">
+                        <Run FontWeight="SemiBold" Text="Ping mode" />
+                        <Run Text=" falls back to one ICMP ping per host for networks where TCP probing does not fit. Slower, but thorough." />
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Engine" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <TextBlock
+                        Style="{StaticResource BodyTextBlockStyle}"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextWrapping="Wrap">
+                        <Run Text="Scanning is done by the ns engine (installed " /><Run x:Name="EngineVersionRun" Text="…" /><Run Text=", bundled " /><Run x:Name="PinnedEngineRun" Text="v1.1.0" /><Run Text=", latest " /><Run x:Name="LatestVersionRun" Text="…" /><Run Text="). The bundle refreshes at build time; a newer release can be installed per-user from Discovery." />
+                    </TextBlock>
+                    <TextBlock
+                        x:Name="EngineUpdateNote"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                        TextWrapping="Wrap"
+                        Visibility="Collapsed" />
+                    <HyperlinkButton
+                        Content="NetScanner on GitHub"
+                        NavigateUri="https://github.com/Criseda/NetScanner" />
+                    <HyperlinkButton
+                        Content="NetScanner releases"
+                        NavigateUri="https://github.com/Criseda/NetScanner/releases" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="App" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <TextBlock Style="{StaticResource BodyTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                        <Run Text="NetScannerDesktop " /><Run x:Name="AppVersionRun" Text="…" />
+                    </TextBlock>
+                    <HyperlinkButton
+                        Content="Windows App SDK / WinUI 3 frontend"
+                        NavigateUri="https://learn.microsoft.com/windows/apps/winui/" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorderStyle}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="License" Style="{StaticResource SubtitleTextBlockStyle}" />
+                    <TextBlock
+                        Text="NetScanner and this frontend are free software under the GNU GPL-3.0 license."
+                        Style="{StaticResource BodyTextBlockStyle}"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextWrapping="Wrap" />
+                    <Expander Header="What this means" HorizontalAlignment="Stretch">
+                        <Expander.Content>
+                            <TextBlock TextWrapping="Wrap">
+                                <Run Text="You may run, study, share, and modify the software. If you distribute it (including this frontend with ns.exe), you must provide source and keep the same license. See the full text via the link below." />
+                            </TextBlock>
+                        </Expander.Content>
+                    </Expander>
+                    <HyperlinkButton
+                        Content="GNU GPL-3.0 full text"
+                        NavigateUri="https://www.gnu.org/licenses/gpl-3.0.html" />
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</Page>

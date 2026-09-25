@@ -9,6 +9,11 @@
 		<RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
 		<UseWinUI>true</UseWinUI>
 		<Nullable>enable</Nullable>
+		<!-- Lets the raw exe run unpackaged (MddBootstrap); no-op when deployed via MSIX. -->
+		<WindowsAppSdkBootstrapInitialize>true</WindowsAppSdkBootstrapInitialize>
+		<!-- NetScanner engine version. Keep in sync with Scripts/fetch-ns.ps1. -->
+		<NetScannerVersion>v1.1.0</NetScannerVersion>
+		<NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
 	</PropertyGroup>
 
 	<ItemGroup>
@@ -16,18 +21,34 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
 		<PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
 		<PackageReference Include="Microsoft.WindowsAppSDK" Version="1.6.250205002" />
 	</ItemGroup>
 
+	<!--
+		The ns.exe engine is downloaded by Scripts/fetch-ns.ps1, not stored in git.
+		It is Content so it lands next to the app exe and flows into the MSIX package.
+	-->
 	<ItemGroup>
-		<None Update="Tools\ns.exe">
+		<Content Include="Assets\Tools\ns.exe">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
-		<None Update="Tools\README.md">
+		</Content>
+		<Content Include="Assets\Tools\ns.version.txt">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</None>
+		</Content>
 	</ItemGroup>
+
+	<!--
+		Refresh ns.exe before every build. Scripts/fetch-ns.ps1 fast-paths:
+		it does nothing when the pinned version is already present, and
+		downloads + checksum-verifies otherwise — so the bundled engine
+		can never silently go stale after a version bump.
+		CI with no network should pre-run Scripts/fetch-ns.ps1 instead.
+	-->
+	<Target Name="FetchNetScanner" BeforeTargets="BeforeBuild">
+		<Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\Scripts\fetch-ns.ps1&quot; -Version $(NetScannerVersion)" />
+	</Target>
 
 	<!-- Publish Properties -->
 	<PropertyGroup>

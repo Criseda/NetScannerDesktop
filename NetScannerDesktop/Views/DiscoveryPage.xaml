@@ -1,0 +1,385 @@
+<Page
+    x:Class="NetScannerDesktop.Views.DiscoveryPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:NetScannerDesktop.Models"
+    xmlns:services="using:NetScannerDesktop.Services"
+    NavigationCacheMode="Required"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <Style x:Key="CardBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="20" />
+        </Style>
+    </Page.Resources>
+
+    <Page.KeyboardAccelerators>
+        <KeyboardAccelerator Key="F" Modifiers="Control" Invoked="FilterAccelerator_Invoked" />
+        <KeyboardAccelerator Key="R" Modifiers="Control" Invoked="ScanAccelerator_Invoked" />
+        <KeyboardAccelerator Key="F5" Invoked="ScanAccelerator_Invoked" />
+        <KeyboardAccelerator Key="Escape" Invoked="CancelAccelerator_Invoked" />
+    </Page.KeyboardAccelerators>
+
+    <ScrollViewer>
+        <Grid
+            x:Name="RootGrid"
+            Padding="32,24,32,32"
+            RowSpacing="16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Spacing="4">
+                <TextBlock Text="Host discovery" Style="{StaticResource TitleTextBlockStyle}" />
+                <TextBlock
+                    Text="Find live hosts on your local network. Fast TCP plus ARP by default, about 2 seconds for a /24."
+                    Style="{StaticResource BodyTextBlockStyle}"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" Spacing="8">
+                <InfoBar
+                    IsOpen="{x:Bind ViewModel.IsFirstRunTipOpen, Mode=TwoWay}"
+                    Title="Find hosts on your LAN"
+                    Message="Pick a subnet (we pre-filled yours) and press Scan. Results stream live; right-click a host for actions."
+                    Severity="Informational"
+                    IsClosable="True"
+                    Closed="FirstRunTipBar_Closed" />
+                <InfoBar
+                    IsOpen="{x:Bind ViewModel.IsNoticeOpen, Mode=TwoWay}"
+                    Message="{x:Bind ViewModel.NoticeText, Mode=OneWay}"
+                    Severity="{x:Bind ViewModel.NoticeSeverity, Mode=OneWay}"
+                    IsClosable="True" />
+                <InfoBar
+                    IsOpen="{x:Bind ViewModel.IsUpdateAvailable, Mode=TwoWay}"
+                    Title="Engine update available"
+                    Message="{x:Bind ViewModel.UpdateAvailableText, Mode=OneWay}"
+                    Severity="Informational"
+                    IsClosable="True">
+                    <InfoBar.ActionButton>
+                        <Button
+                            Content="{x:Bind ViewModel.UpdateButtonText, Mode=OneWay}"
+                            Command="{x:Bind ViewModel.UpdateEngineCommand}"
+                            AutomationProperties.Name="Update engine now" />
+                    </InfoBar.ActionButton>
+                </InfoBar>
+            </StackPanel>
+
+            <Grid
+                Grid.Row="2"
+                ColumnSpacing="16"
+                RowSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="SetupColumn" Width="380" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <!-- Scan setup -->
+                <Border
+                    x:Name="SetupCard"
+                    Grid.Row="0"
+                    Grid.Column="0"
+                    Style="{StaticResource CardBorderStyle}">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Scan" Style="{StaticResource SubtitleTextBlockStyle}" />
+                        <TextBox
+                            Header="Subnet"
+                            PlaceholderText="192.168.1.0/24"
+                            Description="CIDR notation, for example 192.168.1.0/24."
+                            Text="{x:Bind ViewModel.Subnet, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            KeyDown="Input_KeyDown" />
+                        <TextBlock
+                            Text="{x:Bind ViewModel.SubnetErrorText, Mode=OneWay}"
+                            Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Visibility="{x:Bind ViewModel.SubnetErrorVisibility, Mode=OneWay}"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            Text="{x:Bind ViewModel.HostEstimateText, Mode=OneWay}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextWrapping="Wrap" />
+                        <ComboBox
+                            Header="Known networks"
+                            PlaceholderText="Fill in from this machine"
+                            HorizontalAlignment="Stretch"
+                            ItemsSource="{x:Bind ViewModel.LocalSubnets, Mode=OneWay}"
+                            SelectedItem="{x:Bind ViewModel.SelectedSuggestion, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="services:LocalSubnet">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="{x:Bind Cidr}" />
+                                        <TextBlock
+                                            Text="{x:Bind AdapterName}"
+                                            Style="{StaticResource CaptionTextBlockStyle}"
+                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox
+                            Header="Recent"
+                            PlaceholderText="Previously scanned subnets"
+                            HorizontalAlignment="Stretch"
+                            ItemsSource="{x:Bind ViewModel.RecentSubnets, Mode=OneWay}"
+                            SelectedItem="{x:Bind ViewModel.SelectedRecent, Mode=TwoWay}" />
+                        <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                            <CheckBox
+                                Content="Use ICMP ping sweep instead of TCP + ARP"
+                                IsChecked="{x:Bind ViewModel.UsePingFallback, Mode=TwoWay}" />
+                            <Button
+                                Padding="4"
+                                MinHeight="0"
+                                MinWidth="0"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                VerticalAlignment="Center"
+                                AutomationProperties.Name="About ICMP ping sweep">
+                                <FontIcon
+                                    Glyph="&#xE946;"
+                                    FontSize="14"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <ToolTipService.ToolTip>
+                                    <ToolTip MaxWidth="320">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="ICMP Ping vs. TCP + ARP" FontWeight="SemiBold" />
+                                            <TextBlock Text="By default, NetScanner combines fast TCP probing with local ARP table harvesting (~2s for a /24).&#x0a;&#x0a;Enable ICMP Ping sweep for networks that filter TCP probes or when standard ping requests are required (runs ns --ping)."
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </ToolTip>
+                                </ToolTipService.ToolTip>
+                                <Button.Flyout>
+                                    <Flyout Placement="Right">
+                                        <StackPanel Spacing="6" MaxWidth="300">
+                                            <TextBlock Text="ICMP Ping vs. TCP + ARP" FontWeight="SemiBold" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                            <TextBlock Text="By default, NetScanner uses fast TCP probing combined with your local ARP table. This completes a standard /24 scan in about 2 seconds."
+                                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Text="ICMP Ping Sweep sends classic ICMP echo requests (ping) to every host instead. It is slower, but ideal for networks that block TCP probes or when testing ICMP responsiveness (runs ns --ping)."
+                                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Flyout>
+                                </Button.Flyout>
+                            </Button>
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button
+                                x:Name="ScanButton"
+                                Content="Scan"
+                                Style="{StaticResource AccentButtonStyle}"
+                                Command="{x:Bind ViewModel.ScanCommand}"
+                                AutomationProperties.Name="Start discovery scan" />
+                            <Button
+                                Content="Cancel"
+                                Command="{x:Bind ViewModel.CancelCommand}"
+                                IsEnabled="{x:Bind ViewModel.IsScanning, Mode=OneWay}"
+                                AutomationProperties.Name="Cancel discovery scan" />
+                        </StackPanel>
+                        <ProgressBar
+                            IsIndeterminate="{x:Bind ViewModel.IsScanning, Mode=OneWay}"
+                            Visibility="{x:Bind ViewModel.ScanProgressVisibility, Mode=OneWay}" />
+                        <TextBlock
+                            Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Results -->
+                <Border
+                    x:Name="ResultsCard"
+                    Grid.Row="0"
+                    Grid.Column="1"
+                    Style="{StaticResource CardBorderStyle}">
+                    <StackPanel Spacing="12">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock
+                                Grid.Column="0"
+                                Text="{x:Bind ViewModel.HostCountTitle, Mode=OneWay}"
+                                Style="{StaticResource SubtitleTextBlockStyle}"
+                                VerticalAlignment="Center"
+                                TextTrimming="CharacterEllipsis" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                                <Button Content="Copy" Command="{x:Bind ViewModel.CopyResultsCommand}" ToolTipService.ToolTip="Copy all IPs (Ctrl+C)" />
+                                <Button Content="Export CSV" Command="{x:Bind ViewModel.ExportCsvCommand}" />
+                            </StackPanel>
+                        </Grid>
+                        <Grid ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox
+                                x:Name="FilterBox"
+                                Grid.Column="0"
+                                PlaceholderText="Filter hosts… (Ctrl+F)"
+                                Text="{x:Bind ViewModel.FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <CheckBox
+                                Grid.Column="1"
+                                Content="Sort by IP"
+                                IsChecked="{x:Bind ViewModel.SortByIp, Mode=TwoWay}"
+                                VerticalAlignment="Center" />
+                        </Grid>
+                        <StackPanel
+                            x:Name="EmptyStatePanel"
+                            Visibility="{x:Bind ViewModel.EmptyStateVisibility, Mode=OneWay}"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Margin="0,32,0,32"
+                            Spacing="10">
+                            <FontIcon
+                                Glyph="&#xE774;"
+                                FontSize="32"
+                                Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                HorizontalAlignment="Center" />
+                            <TextBlock
+                                Text="Ready to discover hosts"
+                                Style="{StaticResource SubtitleTextBlockStyle}"
+                                HorizontalAlignment="Center" />
+                            <TextBlock
+                                Text="Pick or enter a subnet and press Scan to find live devices on your network."
+                                Style="{StaticResource BodyTextBlockStyle}"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                TextAlignment="Center"
+                                MaxWidth="320"
+                                TextWrapping="Wrap" />
+                            <Button
+                                Content="Start discovery scan"
+                                Style="{StaticResource AccentButtonStyle}"
+                                HorizontalAlignment="Center"
+                                Margin="0,4,0,0"
+                                Command="{x:Bind ViewModel.ScanCommand}" />
+                        </StackPanel>
+                        <ListView
+                            x:Name="HostsList"
+                            ItemsSource="{x:Bind ViewModel.FilteredHosts, Mode=OneWay}"
+                            SelectionMode="Single"
+                            MinHeight="320"
+                            MaxHeight="560"
+                            DoubleTapped="HostsList_DoubleTapped"
+                            AutomationProperties.Name="Discovered hosts">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="models:HostResult">
+                                    <Grid ColumnSpacing="12" Padding="0,6">
+                                        <Grid.ContextFlyout>
+                                            <MenuFlyout>
+                                                <MenuFlyoutItem Text="Copy IP" Tag="{x:Bind IpAddress}" Click="CopyHost_Click" Icon="Copy" />
+                                                <MenuFlyoutItem Text="Scan ports…" Tag="{x:Bind IpAddress}" Click="ScanPorts_Click" Icon="Globe" />
+                                                <MenuFlyoutSeparator />
+                                                <MenuFlyoutItem Text="Open in browser (HTTP)" Tag="{x:Bind IpAddress}" Click="OpenHttp_Click" Icon="World" />
+                                                <MenuFlyoutItem Text="Open in browser (HTTPS)" Tag="{x:Bind IpAddress}" Click="OpenHttps_Click" Icon="Permissions" />
+                                                <MenuFlyoutItem Text="Copy host summary" Tag="{x:Bind IpAddress}" Click="CopySummary_Click" />
+                                            </MenuFlyout>
+                                        </Grid.ContextFlyout>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <SymbolIcon Grid.Column="0" Symbol="Globe" />
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2" Margin="0,0,12,0">
+                                            <TextBlock
+                                                Text="{x:Bind IpAddress}"
+                                                Style="{StaticResource BodyStrongTextBlockStyle}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                Text="{x:Bind PortsSummary, Mode=OneWay}"
+                                                Visibility="{x:Bind HasScannedPortsVisibility, Mode=OneWay}"
+                                                Style="{StaticResource CaptionTextBlockStyle}"
+                                                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                                TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <Border
+                                            Grid.Column="2"
+                                            Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                            CornerRadius="4"
+                                            Padding="8,2"
+                                            VerticalAlignment="Center">
+                                            <TextBlock
+                                                Text="{x:Bind Source}"
+                                                Style="{StaticResource CaptionTextBlockStyle}"
+                                                Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                                        </Border>
+                                        <TextBlock
+                                            Grid.Column="3"
+                                            Text="{x:Bind FoundAtShort}"
+                                            Style="{StaticResource CaptionTextBlockStyle}"
+                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                            VerticalAlignment="Center" />
+                                        <HyperlinkButton
+                                            Grid.Column="4"
+                                            Content="{x:Bind PortsButtonText, Mode=OneWay}"
+                                            Tag="{x:Bind IpAddress}"
+                                            Click="ScanPorts_Click"
+                                            ToolTipService.ToolTip="Open in Port scan"
+                                            VerticalAlignment="Center"
+                                            Padding="8,2" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <StackPanel Grid.Row="3" Spacing="8">
+                <Expander Header="Engine output" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                    <Expander.Content>
+                        <StackPanel Spacing="8">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <Button Content="Copy log" Command="{x:Bind ViewModel.CopyLogCommand}" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.LogLineCountText, Mode=OneWay}"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBox
+                                x:Name="LogBox"
+                                Text="{x:Bind ViewModel.LogText, Mode=OneWay}"
+                                IsReadOnly="True"
+                                AcceptsReturn="True"
+                                TextWrapping="Wrap"
+                                FontFamily="Consolas"
+                                MinHeight="120"
+                                MaxHeight="240"
+                                ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                TextChanged="LogBox_TextChanged" />
+                        </StackPanel>
+                    </Expander.Content>
+                </Expander>
+                <TextBlock
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Foreground="{ThemeResource TextFillColorTertiaryBrush}">
+                    <Run Text="Engine: ns " /><Run Text="{x:Bind ViewModel.EngineVersion, Mode=OneWay}" />
+                </TextBlock>
+            </StackPanel>
+
+        </Grid>
+    </ScrollViewer>
+</Page>

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -33,6 +33,28 @@ namespace NetScannerDesktop
         public App()
         {
             this.InitializeComponent();
+            this.UnhandledException += OnUnhandledException;
+        }
+
+        /// <summary>
+        /// Last-resort diagnostics: persist the crash details where the user
+        /// can find them (%TEMP%\NetScannerDesktop.crash.log). Does not mark
+        /// the exception handled — the app still terminates as before.
+        /// </summary>
+        private void OnUnhandledException(object sender, Microsoft.UI.Xaml.UnhandledExceptionEventArgs e)
+        {
+            try
+            {
+                string path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "NetScannerDesktop.crash.log");
+                string detail =
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] Unhandled: {e.Exception}{Environment.NewLine}" +
+                    $"Message: {e.Message}{Environment.NewLine}{Environment.NewLine}";
+                File.AppendAllText(path, detail);
+            }
+            catch
+            {
+                // Logging must never throw.
+            }
         }
 
         /// <summary>
@@ -41,10 +63,20 @@ namespace NetScannerDesktop
         /// <param name="args">Details about the launch request and process.</param>
         protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
         {
-            m_window = new MainWindow();
-            m_window.Activate();
+            try
+            {
+                m_window = new MainWindow();
+                m_window.Activate();
+            }
+            catch (Exception ex)
+            {
+                File.WriteAllText("C:\\Users\\ilaur\\git\\NetScannerDesktop\\launch_error.txt", ex.ToString());
+                throw;
+            }
         }
 
         private Window? m_window;
+
+        public MainWindow? MainAppWindow => m_window as MainWindow;
     }
 }
