@@ -21,7 +21,7 @@
 		<Compile Include="$(AppDir)Services\FilteredSortedView.cs" Link="App\FilteredSortedView.cs" />
 		<Compile Include="$(AppDir)Services\Csv.cs" Link="App\Csv.cs" />
 		<Compile Include="$(AppDir)Services\EngineUpdater.cs" Link="App\EngineUpdater.cs" />
-		<Compile Include="$(AppDir)Services\WellKnownPorts.cs" Link="App\WellKnownPorts.cs" />
+		<Compile Include="$(AppDir)Services\TableSort.cs" Link="App\TableSort.cs" />
 		<Compile Include="$(AppDir)Models\*.cs" Link="App\Models\%(Filename)%(Extension)" />
 	</ItemGroup>
 

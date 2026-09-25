@@ -31,11 +31,16 @@
             </TitleBar.IconSource>
         </TitleBar>
 
-        <!-- Top-level pages are peers, so there is no back stack between them. -->
+        <!--
+            Top-level pages are peers, so there is no back stack between them.
+            The pane only holds three short items; keeping it narrow leaves
+            the width to the results tables.
+        -->
         <NavigationView
             x:Name="Nav"
             Grid.Row="1"
             PaneDisplayMode="Auto"
+            OpenPaneLength="200"
             IsBackButtonVisible="Collapsed"
             IsPaneToggleButtonVisible="False"
             IsTitleBarAutoPaddingEnabled="False"

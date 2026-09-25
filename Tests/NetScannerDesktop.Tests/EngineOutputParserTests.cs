@@ -143,8 +143,15 @@ public class EngineOutputParserTextTests
             Open ports: 80, 443
             """);
 
-        Assert.Equal([443, 80], events.OfType<PortFoundEvent>().Select(e => e.Port));
+        Assert.Equal([443, 80], events.OfType<PortFoundEvent>().Select(e => e.Result.Port));
         Assert.Equal([80, 443], Assert.Single(events.OfType<PortSummaryEvent>()).OpenPorts);
+    }
+
+    [Fact]
+    public void Named_text_port_lines_keep_the_name()
+    {
+        PortResult port = Assert.Single(ParseAll("Open port: 3389 (RDP)").OfType<PortFoundEvent>()).Result;
+        Assert.Equal(new PortResult(3389, "RDP"), port);
     }
 
     [Fact]
@@ -216,8 +223,24 @@ public class EngineOutputParserJsonTests
             {"type":"summary","open_ports":[135,445],"elapsed_ms":515}
             """);
 
-        Assert.Equal([135], events.OfType<PortFoundEvent>().Select(e => e.Port));
+        Assert.Equal([135], events.OfType<PortFoundEvent>().Select(e => e.Result.Port));
+        Assert.False(Assert.Single(events.OfType<PortFoundEvent>()).Result.HasServiceData);
         Assert.Equal([135, 445], Assert.Single(events.OfType<PortSummaryEvent>()).OpenPorts);
+    }
+
+    [Fact]
+    public void Named_port_events()
+    {
+        // Captured from ns v1.4 `ns -p 127.0.0.1 130-450 --json`, plus a common-use and an unknown port.
+        var ports = ParseAll("""
+            {"type":"port","port":135,"service":"MS RPC","iana":"epmap","description":"Microsoft RPC endpoint mapper","category":"network"}
+            {"type":"port","port":8123,"service":"Home Assistant","iana":null,"description":"Home Assistant web UI","category":"home"}
+            {"type":"port","port":40000,"service":null,"iana":null,"description":null,"category":null}
+            """).OfType<PortFoundEvent>().Select(e => e.Result).ToList();
+
+        Assert.Equal(new PortResult(135, "MS RPC", "epmap", "Microsoft RPC endpoint mapper", "network", true), ports[0]);
+        Assert.Equal(new PortResult(8123, "Home Assistant", null, "Home Assistant web UI", "home", true), ports[1]);
+        Assert.Equal(new PortResult(40000, HasServiceData: true), ports[2]);
     }
 
     [Fact]

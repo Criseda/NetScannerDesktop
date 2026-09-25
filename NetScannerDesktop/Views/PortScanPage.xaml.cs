@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -10,11 +11,13 @@ namespace NetScannerDesktop.Views;
 
 /// <summary>
 /// Port scan page. The XAML binds to <see cref="ViewModel"/>; this file
-/// handles the host box, context actions, and the two-column / stacked
-/// switch.
+/// handles the host box, context actions, and layout sizing.
 /// </summary>
 public sealed partial class PortScanPage : Page, IResponsivePage
 {
+    /// <summary>Below this width the port table scrolls sideways instead of squeezing its columns.</summary>
+    private const double PortsTableMinWidth = 800;
+
     public PortScanViewModel ViewModel { get; } = new();
 
     private bool wideLayout = true;
@@ -23,6 +26,7 @@ public sealed partial class PortScanPage : Page, IResponsivePage
     {
         InitializeComponent();
         Loaded += (_, _) => ApplyLayoutMode();
+        PageHelpers.FitTableToViewport(PortsTableScroller, PortsTable, PortsTableMinWidth);
         ViewModel.ConfirmLargeScanAsync = message => PageHelpers.ConfirmLargeScanAsync(XamlRoot, message);
         ViewModel.SaveFileAsync = PageHelpers.SaveFileAsync;
 
@@ -140,7 +144,7 @@ public sealed partial class PortScanPage : Page, IResponsivePage
     {
         if (PortFromTag(sender) is int port)
         {
-            Open(port is 443 or 8443 ? "https" : "http", port);
+            Open(ViewModel.OpenPorts.FirstOrDefault(p => p.Port == port)?.WebScheme ?? "http", port);
         }
     }
 
@@ -212,7 +216,5 @@ public sealed partial class PortScanPage : Page, IResponsivePage
         }
     }
 
-    private void ApplyLayoutMode() =>
-        PageHelpers.ApplyCardLayout(wideLayout, PageScroller, RootGrid, CardsRow, SetupRow,
-            SetupColumn, SetupCard, ResultsCard, PortsList);
+    private void ApplyLayoutMode() => PageHelpers.ApplyPagePadding(wideLayout, RootGrid);
 }

@@ -23,9 +23,10 @@ public abstract partial class ScanViewModelBase : ObservableObject
     private CancellationTokenSource? runningScan;
     private Action? refreshProgress;
 
-    protected ScanViewModelBase(INetScannerService scanner)
+    protected ScanViewModelBase(INetScannerService scanner, string defaultSortColumn)
     {
         Scanner = scanner;
+        sortColumn = defaultSortColumn;
     }
 
     /// <summary>Set by the view: (suggestedName, extension, content) -> saved path or null.</summary>
@@ -124,6 +125,42 @@ public abstract partial class ScanViewModelBase : ObservableObject
     protected static string FormatElapsed(TimeSpan elapsed) => elapsed.TotalMinutes >= 1
         ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:D2}s"
         : $"{elapsed.TotalSeconds:F1}s";
+
+    // Results table sorting ------------------------------------------------------
+
+    /// <summary>Column the results table is sorted by: the key its header passes to <see cref="SortByCommand"/>.</summary>
+    [ObservableProperty]
+    private string sortColumn;
+
+    [ObservableProperty]
+    private bool sortDescending;
+
+    /// <summary>Header click: sort by that column, or flip the direction if it already is.</summary>
+    [RelayCommand]
+    private void SortBy(string column)
+    {
+        if (column == SortColumn)
+        {
+            SortDescending = !SortDescending;
+        }
+        else
+        {
+            SortColumn = column;
+            SortDescending = false;
+        }
+
+        ApplySort();
+    }
+
+    /// <summary>Re-sort the results for <see cref="SortColumn"/> and <see cref="SortDescending"/>.</summary>
+    protected abstract void ApplySort();
+
+    /// <summary>
+    /// Arrow shown in a column header. Bound as an x:Bind function of the
+    /// sort state, so every header refreshes when the sort changes.
+    /// </summary>
+    public string SortGlyph(string column, string sortColumn, bool descending) =>
+        TableSort.Glyph(column, sortColumn, descending);
 
     // Engine log ---------------------------------------------------------------
 

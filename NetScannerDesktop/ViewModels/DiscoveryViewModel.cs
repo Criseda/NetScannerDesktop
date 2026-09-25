@@ -36,7 +36,7 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
     {
     }
 
-    public DiscoveryViewModel(INetScannerService scanner) : base(scanner)
+    public DiscoveryViewModel(INetScannerService scanner) : base(scanner, defaultSortColumn: "ip")
     {
         StatusText = "Enter a subnet to start.";
         VisibleHosts.CollectionChanged += (_, _) => NotifyEmptyStateChanged();
@@ -45,7 +45,11 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
         {
             if (hostsByIp.TryGetValue(ip, out HostResult? host))
             {
-                host.UpdateScannedPorts(history.SummaryText);
+                host.OpenPorts = history.OpenPorts;
+                if (SortColumn == "ports")
+                {
+                    hostView.Refresh();
+                }
             }
         };
 
@@ -54,7 +58,7 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
             UpdateSuggestions(string.Empty);
             foreach (HostResult host in Hosts)
             {
-                host.UpdateScannedPorts(null);
+                host.OpenPorts = null;
             }
         };
     }
@@ -80,7 +84,7 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
 
         if (ScanHistoryService.TryGet(host.IpAddress, out var history) && history != null)
         {
-            host.UpdateScannedPorts(history.SummaryText);
+            host.OpenPorts = history.OpenPorts;
         }
 
         hostView.Add(host);
@@ -105,35 +109,26 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
         hostView.SetFilter(f.Length == 0 ? _ => true : h => h.Matches(f));
     }
 
-    /// <summary>0 = by IP address, 1 = by name, 2 = by time found.</summary>
-    [ObservableProperty]
-    private int sortIndex;
-
-    partial void OnSortIndexChanged(int value) => hostView.SetComparer(value switch
-    {
-        1 => ByName,
-        2 => ByTimeFound,
-        _ => ByIp,
-    });
-
     private static readonly IComparer<HostResult> ByIp =
         Comparer<HostResult>.Create((a, b) => IpToSortKey(a.IpAddress).CompareTo(IpToSortKey(b.IpAddress)));
 
-    /// <summary>Named devices first (alphabetically), then the rest by IP.</summary>
-    private static readonly IComparer<HostResult> ByName = Comparer<HostResult>.Create((a, b) =>
+    protected override void ApplySort() => hostView.SetComparer(HostComparer(SortColumn, SortDescending));
+
+    /// <summary>
+    /// Comparer for a Discovery table column. Blank cells sort last and
+    /// ties go by IP, so unnamed hosts stay in address order at the end.
+    /// Ports sort by how many are open; hosts never port scanned go last.
+    /// </summary>
+    internal static IComparer<HostResult> HostComparer(string column, bool descending) => column switch
     {
-        int named = (a.Hostname is null).CompareTo(b.Hostname is null);
-        if (named != 0)
-        {
-            return named;
-        }
-
-        int byName = StringComparer.OrdinalIgnoreCase.Compare(a.Hostname, b.Hostname);
-        return byName != 0 ? byName : ByIp.Compare(a, b);
-    });
-
-    private static readonly IComparer<HostResult> ByTimeFound =
-        Comparer<HostResult>.Create((a, b) => a.FoundAt.CompareTo(b.FoundAt));
+        "name" => TableSort.ByText<HostResult>(h => h.Hostname, descending, ByIp),
+        "vendor" => TableSort.ByText<HostResult>(h => h.Vendor, descending, ByIp),
+        "mac" => TableSort.ByText<HostResult>(h => h.MacAddress, descending, ByIp),
+        "source" => TableSort.ByText<HostResult>(h => h.Source, descending, ByIp),
+        "ports" => TableSort.ByValue<HostResult, int>(h => h.HasScannedPorts ? h.OpenPortCount : null, descending, ByIp),
+        "found" => TableSort.ByValue<HostResult, DateTime>(h => h.FoundAt, descending, ByIp),
+        _ => TableSort.ByValue<HostResult, uint>(h => IpToSortKey(h.IpAddress), descending),
+    };
 
     internal static uint IpToSortKey(string ip)
     {
@@ -163,15 +158,19 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
     private string subnet = string.Empty;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(MethodIndex))]
+    [NotifyPropertyChangedFor(nameof(MethodIndex), nameof(MethodHint))]
     private bool usePingFallback;
 
-    /// <summary>RadioButtons index: 0 = TCP + ARP, 1 = ICMP ping.</summary>
+    /// <summary>Method box index: 0 = TCP + ARP, 1 = ICMP ping.</summary>
     public int MethodIndex
     {
         get => UsePingFallback ? 1 : 0;
         set => UsePingFallback = value == 1;
     }
+
+    public string MethodHint => UsePingFallback
+        ? "Slower. For networks that filter TCP probes."
+        : "Fast. Also finds quiet hosts in the ARP table.";
 
     partial void OnUsePingFallbackChanged(bool value) => AppSettings.SetBool(AppSettings.DiscoveryUsePing, value);
 
@@ -289,9 +288,21 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
         }
     }
 
-    private string IdleStatus() => string.IsNullOrWhiteSpace(Subnet)
-        ? "Enter a subnet to start."
-        : "Ready. Press Scan or F5.";
+    private string IdleStatus()
+    {
+        if (string.IsNullOrWhiteSpace(Subnet))
+        {
+            return "Enter a subnet to start.";
+        }
+
+        if (HasSubnetError || !NetworkValidation.TryParseCidr(Subnet, out _))
+        {
+            return "Enter a valid subnet to start.";
+        }
+
+        long n = NetworkValidation.CountUsableHosts(Subnet.Trim());
+        return $"Ready to probe {n:N0} {(n == 1 ? "host" : "hosts")}. Press Scan or F5.";
+    }
 
     // Suggestions ------------------------------------------------------------
 
@@ -374,8 +385,7 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
     {
         foreach (HostResult host in Hosts)
         {
-            host.UpdateScannedPorts(
-                ScanHistoryService.TryGet(host.IpAddress, out var history) ? history?.SummaryText : null);
+            host.OpenPorts = ScanHistoryService.TryGet(host.IpAddress, out var history) ? history?.OpenPorts : null;
         }
     }
 
@@ -537,7 +547,7 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
             VisibleHosts.Select(h => new[]
             {
                 h.IpAddress, h.Hostname ?? string.Empty, h.MacAddress ?? string.Empty, h.Vendor ?? string.Empty,
-                h.Source, h.FoundAt.ToString("s"), h.PortsSummary ?? string.Empty,
+                h.Source, h.FoundAt.ToString("s"), h.PortsDetail,
             }),
             new[] { "ip_address", "hostname", "mac_address", "vendor", "source", "found_at", "ports" });
 

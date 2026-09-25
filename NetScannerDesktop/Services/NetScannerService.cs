@@ -23,9 +23,9 @@ public sealed record SubnetScanResult(
     string RawLog,
     TimeSpan Elapsed);
 
-/// <summary>Outcome of <c>ns -p &lt;ip&gt; &lt;range&gt;</c>.</summary>
+/// <summary>Outcome of <c>ns -p &lt;ip&gt; &lt;range&gt;</c>, ports ascending.</summary>
 public sealed record PortScanResult(
-    List<int> OpenPorts,
+    List<PortResult> OpenPorts,
     string RawLog,
     TimeSpan Elapsed);
 
@@ -60,7 +60,7 @@ public interface INetScannerService
         string ipAddress,
         int startPort,
         int endPort,
-        IProgress<int>? portFound,
+        IProgress<PortResult>? portFound,
         IProgress<string>? logLine,
         CancellationToken cancellationToken,
         int? timeoutMs = null);
@@ -269,7 +269,7 @@ public sealed class NetScannerService : INetScannerService
         string ipAddress,
         int startPort,
         int endPort,
-        IProgress<int>? portFound,
+        IProgress<PortResult>? portFound,
         IProgress<string>? logLine,
         CancellationToken cancellationToken,
         int? timeoutMs = null)
@@ -290,7 +290,7 @@ public sealed class NetScannerService : INetScannerService
         }
 
         var rawLog = new StringBuilder();
-        var openPorts = new List<int>();
+        var openPorts = new Dictionary<int, PortResult>();
         bool finished = false;
         string? engineError = null;
         var started = Stopwatch.StartNew();
@@ -298,11 +298,10 @@ public sealed class NetScannerService : INetScannerService
         var stdoutParser = new EngineOutputParser(caps.Json);
         var stderrParser = new EngineOutputParser(json: false);
 
-        void AddPort(int port)
+        void AddPort(PortResult port)
         {
-            if (!openPorts.Contains(port))
+            if (openPorts.TryAdd(port.Port, port))
             {
-                openPorts.Add(port);
                 portFound?.Report(port);
             }
         }
@@ -312,13 +311,15 @@ public sealed class NetScannerService : INetScannerService
             switch (e)
             {
                 case PortFoundEvent found:
-                    AddPort(found.Port);
+                    AddPort(found.Result);
                     break;
                 case PortSummaryEvent recap:
+                    // Numbers only; every port already streamed with its
+                    // name, so this just fills gaps.
                     finished = true;
                     foreach (int port in recap.OpenPorts)
                     {
-                        AddPort(port);
+                        AddPort(new PortResult(port));
                     }
 
                     break;
@@ -345,8 +346,8 @@ public sealed class NetScannerService : INetScannerService
             throw new InvalidOperationException($"ns scan failed (exit {exit}): {TrimLogTail(rawLog.ToString())}");
         }
 
-        openPorts.Sort();
-        return new PortScanResult(openPorts, rawLog.ToString(), started.Elapsed);
+        return new PortScanResult(
+            openPorts.Values.OrderBy(p => p.Port).ToList(), rawLog.ToString(), started.Elapsed);
     }
 
     /// <summary>
