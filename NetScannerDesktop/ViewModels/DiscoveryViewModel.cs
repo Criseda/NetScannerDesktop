@@ -1,7 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -23,7 +23,11 @@ public sealed partial class DiscoveryViewModel : ObservableObject
 {
     private readonly INetScannerService scanner;
     private readonly EngineLog log = new();
+    private readonly List<LocalSubnet> localSubnets = new();
     private CancellationTokenSource? runningScan;
+
+    /// <summary>True once a scan has finished (or been cancelled) this session.</summary>
+    private bool hasScanned;
 
     /// <summary>Above this many hosts the UI asks for confirmation.</summary>
     public const long LargeScanConfirmThreshold = 4096;
@@ -44,16 +48,13 @@ public sealed partial class DiscoveryViewModel : ObservableObject
     public DiscoveryViewModel(INetScannerService scanner)
     {
         this.scanner = scanner;
-        Hosts = new ObservableCollection<HostResult>();
-        LocalSubnets = new ObservableCollection<LocalSubnet>();
 
         // Titles and empty-state hints follow the list automatically.
         Hosts.CollectionChanged += (_, _) =>
         {
             OnPropertyChanged(nameof(HostCountTitle));
             OnPropertyChanged(nameof(FilteredHosts));
-            OnPropertyChanged(nameof(ShowEmptyState));
-            OnPropertyChanged(nameof(EmptyStateVisibility));
+            NotifyEmptyStateChanged();
         };
 
         ScanHistoryService.HistoryUpdated += (ip, history) =>
@@ -64,7 +65,7 @@ public sealed partial class DiscoveryViewModel : ObservableObject
 
         ScanHistoryService.HistoryCleared += () =>
         {
-            RefreshRecent();
+            UpdateSuggestions(string.Empty);
             foreach (var h in Hosts)
             {
                 h.UpdateScannedPorts(null);
@@ -78,17 +79,22 @@ public sealed partial class DiscoveryViewModel : ObservableObject
     private string subnet = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MethodIndex))]
     private bool usePingFallback;
 
+    /// <summary>RadioButtons index: 0 = TCP + ARP, 1 = ICMP ping.</summary>
+    public int MethodIndex
+    {
+        get => UsePingFallback ? 1 : 0;
+        set => UsePingFallback = value == 1;
+    }
+
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ScanProgressVisibility))]
-    [NotifyPropertyChangedFor(nameof(ShowEmptyState))]
-    [NotifyPropertyChangedFor(nameof(EmptyStateVisibility))]
     [NotifyCanExecuteChangedFor(nameof(UpdateEngineCommand))]
     private bool isScanning;
 
     [ObservableProperty]
-    private string statusText = "Enter a subnet to start.";
+    private string statusText = string.Empty;
 
     [ObservableProperty]
     private string logText = string.Empty;
@@ -115,29 +121,29 @@ public sealed partial class DiscoveryViewModel : ObservableObject
         AppSettings.SetBool(AppSettings.SeenTeachingTip, true);
     }
 
-    public ObservableCollection<HostResult> Hosts { get; }
+    public ObservableCollection<HostResult> Hosts { get; } = new();
 
-    public ObservableCollection<LocalSubnet> LocalSubnets { get; }
+    /// <summary>Subnet box suggestions: this machine's networks, then recent scans.</summary>
+    public ObservableCollection<SubnetSuggestion> SubnetSuggestions { get; } = new();
 
-    public ObservableCollection<string> RecentSubnets { get; } = new();
-
-    public string HostCountTitle => Hosts.Count == 1 ? "1 host" : $"{Hosts.Count} hosts";
+    public string HostCountTitle => Hosts.Count == 1 ? "1 host" : $"{Hosts.Count:N0} hosts";
 
     [ObservableProperty]
     private string filterText = string.Empty;
 
     partial void OnFilterTextChanged(string value) => OnPropertyChanged(nameof(FilteredHosts));
 
+    /// <summary>0 = by IP address, 1 = by time found.</summary>
     [ObservableProperty]
-    private bool sortByIp = true;
+    private int sortIndex;
 
-    partial void OnSortByIpChanged(bool value) => OnPropertyChanged(nameof(FilteredHosts));
+    partial void OnSortIndexChanged(int value) => OnPropertyChanged(nameof(FilteredHosts));
 
-    public System.Collections.Generic.IEnumerable<HostResult> FilteredHosts
+    public IEnumerable<HostResult> FilteredHosts
     {
         get
         {
-            System.Collections.Generic.IEnumerable<HostResult> query = Hosts;
+            IEnumerable<HostResult> query = Hosts;
 
             if (!string.IsNullOrWhiteSpace(FilterText))
             {
@@ -148,7 +154,7 @@ public sealed partial class DiscoveryViewModel : ObservableObject
                     (h.PortsSummary != null && h.PortsSummary.Contains(f, StringComparison.OrdinalIgnoreCase)));
             }
 
-            query = SortByIp
+            query = SortIndex == 0
                 ? query.OrderBy(h => IpToSortKey(h.IpAddress))
                 : query.OrderBy(h => h.FoundAt);
 
@@ -184,57 +190,44 @@ public sealed partial class DiscoveryViewModel : ObservableObject
         {
             if (!NetworkValidation.TryParseCidr(Subnet, out _))
             {
-                return "Enter CIDR like 192.168.1.0/24.";
+                return "CIDR notation, for example 192.168.1.0/24.";
             }
 
-            try
-            {
-                long n = NetworkValidation.CountUsableHosts(Subnet.Trim());
-                return $"{n:N0} {(n == 1 ? "host" : "hosts")} will be probed.";
-            }
-            catch
-            {
-                return "Enter CIDR like 192.168.1.0/24.";
-            }
-        }
-    }
-
-    /// <summary>The network picked from the known-networks dropdown, if any.</summary>
-    [ObservableProperty]
-    private LocalSubnet? selectedSuggestion;
-
-    partial void OnSelectedSuggestionChanged(LocalSubnet? value)
-    {
-        // The dropdown acts as a fill-in helper: copy the choice over and
-        // reset so it is ready for the next pick.
-        if (value is not null)
-        {
-            Subnet = value.Cidr;
-            SelectedSuggestion = null;
-        }
-    }
-
-    [ObservableProperty]
-    private string? selectedRecent;
-
-    partial void OnSelectedRecentChanged(string? value)
-    {
-        if (!string.IsNullOrWhiteSpace(value))
-        {
-            Subnet = value;
-            SelectedRecent = null;
+            long n = NetworkValidation.CountUsableHosts(Subnet.Trim());
+            return $"{n:N0} {(n == 1 ? "host" : "hosts")} will be probed.";
         }
     }
 
     partial void OnUsePingFallbackChanged(bool value) => AppSettings.SetBool(AppSettings.DiscoveryUsePing, value);
 
-    /// <summary>Only show the progress track while a scan is running.</summary>
-    public Visibility ScanProgressVisibility => IsScanning ? Visibility.Visible : Visibility.Collapsed;
+    // Empty state ------------------------------------------------------------
 
     /// <summary>Show the empty-state hint only when idle with no results.</summary>
     public bool ShowEmptyState => !IsScanning && Hosts.Count == 0;
 
-    public Visibility EmptyStateVisibility => ShowEmptyState ? Visibility.Visible : Visibility.Collapsed;
+    public string EmptyStateGlyph => hasScanned ? "" : "";
+
+    public string EmptyStateTitle => hasScanned ? "No hosts found" : "Ready to discover hosts";
+
+    public string EmptyStateMessage => hasScanned
+        ? "Nothing answered on this subnet. Check the subnet, or try the ICMP ping method."
+        : "Pick or enter a subnet and press Scan to find live devices on your network.";
+
+    partial void OnIsScanningChanged(bool value)
+    {
+        ScanCommand.NotifyCanExecuteChanged();
+        NotifyEmptyStateChanged();
+    }
+
+    private void NotifyEmptyStateChanged()
+    {
+        OnPropertyChanged(nameof(ShowEmptyState));
+        OnPropertyChanged(nameof(EmptyStateGlyph));
+        OnPropertyChanged(nameof(EmptyStateTitle));
+        OnPropertyChanged(nameof(EmptyStateMessage));
+    }
+
+    // Validation -------------------------------------------------------------
 
     public string SubnetErrorText
     {
@@ -250,28 +243,16 @@ public sealed partial class DiscoveryViewModel : ObservableObject
                 return error;
             }
 
-            try
-            {
-                long n = NetworkValidation.CountUsableHosts(Subnet.Trim());
-                if (n > MaxScanHostsAllowed)
-                {
-                    return $"Too large ({n:N0} hosts). Use /16 or smaller.";
-                }
-            }
-            catch
-            {
-            }
-
-            return string.Empty;
+            long n = NetworkValidation.CountUsableHosts(Subnet.Trim());
+            return n > MaxScanHostsAllowed ? $"Too large ({n:N0} hosts). Use /16 or smaller." : string.Empty;
         }
     }
 
-    public Visibility SubnetErrorVisibility =>
-        string.IsNullOrEmpty(SubnetErrorText) ? Visibility.Collapsed : Visibility.Visible;
+    public bool HasSubnetError => !string.IsNullOrEmpty(SubnetErrorText);
 
     public bool CanScan => !IsScanning
         && !string.IsNullOrWhiteSpace(Subnet)
-        && string.IsNullOrEmpty(SubnetErrorText)
+        && !HasSubnetError
         && !IsEngineMissing;
 
     [ObservableProperty]
@@ -282,12 +263,43 @@ public sealed partial class DiscoveryViewModel : ObservableObject
         ScanCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(HostEstimateText));
         OnPropertyChanged(nameof(SubnetErrorText));
-        OnPropertyChanged(nameof(SubnetErrorVisibility));
+        OnPropertyChanged(nameof(HasSubnetError));
+        if (!IsScanning && !hasScanned)
+        {
+            StatusText = IdleStatus();
+        }
     }
 
-    partial void OnIsScanningChanged(bool value) => ScanCommand.NotifyCanExecuteChanged();
+    private string IdleStatus() => string.IsNullOrWhiteSpace(Subnet)
+        ? "Enter a subnet to start."
+        : "Ready. Press Scan or F5.";
 
     partial void OnIsEngineMissingChanged(bool value) => ScanCommand.NotifyCanExecuteChanged();
+
+    // Suggestions ------------------------------------------------------------
+
+    /// <summary>
+    /// Fills the subnet box dropdown. An empty filter lists everything, so
+    /// focusing the box shows all known networks at once.
+    /// </summary>
+    public void UpdateSuggestions(string filter)
+    {
+        string f = filter.Trim();
+        var items = localSubnets
+            .Select(s => new SubnetSuggestion(s.Cidr, s.AdapterName))
+            .Concat(AppSettings.GetRecent(AppSettings.DiscoveryRecent)
+                .Select(r => new SubnetSuggestion(r, "Recent")))
+            .GroupBy(s => s.Cidr)
+            .Select(g => g.First())
+            .Where(s => f.Length == 0 || s.Cidr.Contains(f, StringComparison.OrdinalIgnoreCase) ||
+                        s.Label.Contains(f, StringComparison.OrdinalIgnoreCase));
+
+        SubnetSuggestions.Clear();
+        foreach (SubnetSuggestion item in items)
+        {
+            SubnetSuggestions.Add(item);
+        }
+    }
 
     // Startup ---------------------------------------------------------------
 
@@ -307,32 +319,22 @@ public sealed partial class DiscoveryViewModel : ObservableObject
 
         loaded = true;
         IsFirstRunTipOpen = !AppSettings.GetBool(AppSettings.SeenTeachingTip);
-
-        if (LocalSubnets.Count == 0)
-        {
-            foreach (LocalSubnet found in LocalNetwork.GetLocalSubnets())
-            {
-                LocalSubnets.Add(found);
-            }
-        }
+        localSubnets.AddRange(LocalNetwork.GetLocalSubnets());
+        UpdateSuggestions(string.Empty);
 
         // Restore last session: saved subnet wins, else first local net.
-        string saved = AppSettings.GetString(AppSettings.DiscoverySubnet);
         UsePingFallback = AppSettings.GetBool(AppSettings.DiscoveryUsePing);
-        RecentSubnets.Clear();
-        foreach (string recent in AppSettings.GetRecent(AppSettings.DiscoveryRecent))
-        {
-            RecentSubnets.Add(recent);
-        }
-
+        string saved = AppSettings.GetString(AppSettings.DiscoverySubnet);
         if (!string.IsNullOrWhiteSpace(saved))
         {
             Subnet = saved;
         }
-        else if (LocalSubnets.Count > 0 && string.IsNullOrWhiteSpace(Subnet))
+        else if (localSubnets.Count > 0)
         {
-            Subnet = LocalSubnets[0].Cidr;
+            Subnet = localSubnets[0].Cidr;
         }
+
+        StatusText = IdleStatus();
 
         try
         {
@@ -358,18 +360,14 @@ public sealed partial class DiscoveryViewModel : ObservableObject
     {
         foreach (var host in Hosts)
         {
-            if (ScanHistoryService.TryGet(host.IpAddress, out var history) && history != null)
-            {
-                host.UpdateScannedPorts(history.SummaryText);
-            }
-            else
-            {
-                host.UpdateScannedPorts(null);
-            }
+            host.UpdateScannedPorts(
+                ScanHistoryService.TryGet(host.IpAddress, out var history) ? history?.SummaryText : null);
         }
     }
 
-    /// <summary>Latest release seen by the last check (null = unknown).</summary>
+    // Engine update ----------------------------------------------------------
+
+    /// <summary>Latest release seen by the last check (empty = unknown).</summary>
     [ObservableProperty]
     private string latestEngineVersion = string.Empty;
 
@@ -439,11 +437,6 @@ public sealed partial class DiscoveryViewModel : ObservableObject
             pendingRelease = null;
             StatusText = $"Engine updated to ns {installed}.";
         }
-        catch (OperationCanceledException)
-        {
-            FlushLog();
-            StatusText = "Engine update cancelled.";
-        }
         catch (Exception ex)
         {
             FlushLog();
@@ -467,17 +460,7 @@ public sealed partial class DiscoveryViewModel : ObservableObject
             return;
         }
 
-        long hostCount;
-        try
-        {
-            hostCount = NetworkValidation.CountUsableHosts(Subnet.Trim());
-        }
-        catch
-        {
-            ShowNotice("Could not compute host count for that subnet.", InfoBarSeverity.Warning);
-            return;
-        }
-
+        long hostCount = NetworkValidation.CountUsableHosts(Subnet.Trim());
         if (hostCount > MaxScanHostsAllowed)
         {
             ShowNotice(
@@ -492,7 +475,7 @@ public sealed partial class DiscoveryViewModel : ObservableObject
                 $"This will probe {hostCount:N0} hosts and may take a while. Continue?");
             if (!ok)
             {
-                StatusText = "Cancelled — large scan not started.";
+                StatusText = "Large scan not started.";
                 return;
             }
         }
@@ -506,24 +489,18 @@ public sealed partial class DiscoveryViewModel : ObservableObject
         string trimmedSubnet = Subnet.Trim();
         AppSettings.SetString(AppSettings.DiscoverySubnet, trimmedSubnet);
         AppSettings.PushRecent(AppSettings.DiscoveryRecent, trimmedSubnet);
-        RefreshRecent();
+        UpdateSuggestions(string.Empty);
 
         IsScanning = true;
         runningScan = new CancellationTokenSource();
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
-        timer.Tick += (_, _) =>
-        {
-            if (!IsScanning) return;
-            var elapsed = stopwatch.Elapsed;
-            string timeStr = elapsed.TotalMinutes >= 1
-                ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:D2}s"
-                : $"{elapsed.Seconds}.{elapsed.Milliseconds / 100}s";
-            StatusText = $"Scanning {trimmedSubnet} • {timeStr} • {HostCountTitle} found…";
-        };
-        timer.Start();
+        void ShowProgress() =>
+            StatusText = $"Scanning {trimmedSubnet} • {FormatElapsed(stopwatch.Elapsed)} • {HostCountTitle} found…";
 
-        StatusText = $"Scanning {trimmedSubnet}…";
+        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        timer.Tick += (_, _) => ShowProgress();
+        timer.Start();
+        ShowProgress();
 
         // Created here on the UI thread: callbacks arrive on the UI thread.
         var hostProgress = new Progress<HostResult>(host =>
@@ -534,42 +511,25 @@ public sealed partial class DiscoveryViewModel : ObservableObject
             }
 
             Hosts.Add(host);
-            var elapsed = stopwatch.Elapsed;
-            string timeStr = elapsed.TotalMinutes >= 1
-                ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:D2}s"
-                : $"{elapsed.Seconds}.{elapsed.Milliseconds / 100}s";
-            StatusText = $"Scanning {trimmedSubnet} • {timeStr} • {HostCountTitle} found…";
+            ShowProgress();
         });
         var logProgress = new Progress<string>(AppendLogLine);
 
         try
         {
             SubnetScanResult result = await scanner.ScanSubnetAsync(
-                Subnet.Trim(), UsePingFallback, hostProgress, logProgress, runningScan.Token);
+                trimmedSubnet, UsePingFallback, hostProgress, logProgress, runningScan.Token);
 
             FlushLog();
-            var totalElapsed = stopwatch.Elapsed;
-            string totalStr = totalElapsed.TotalMinutes >= 1
-                ? $"{(int)totalElapsed.TotalMinutes}m {totalElapsed.Seconds:D2}s"
-                : $"{totalElapsed.TotalSeconds:F1}s";
-
-            if (result.Summary is not null)
-            {
-                StatusText = $"{result.Summary.RawLine} ({totalStr} total).";
-            }
-            else if (result.Hosts.Count == 0)
-            {
-                StatusText = $"No hosts found ({totalStr}).";
-            }
-            else
-            {
-                StatusText = $"{HostCountTitle} found in {totalStr}.";
-            }
+            string total = FormatElapsed(stopwatch.Elapsed);
+            StatusText = result.Hosts.Count == 0
+                ? $"No hosts found on {trimmedSubnet} ({total})."
+                : $"{HostCountTitle} found on {trimmedSubnet} in {total}.";
         }
         catch (OperationCanceledException)
         {
             FlushLog();
-            StatusText = $"Cancelled at {stopwatch.Elapsed.TotalSeconds:F1}s — {HostCountTitle} found.";
+            StatusText = $"Cancelled after {FormatElapsed(stopwatch.Elapsed)} — {HostCountTitle} found.";
         }
         catch (Exception ex)
         {
@@ -582,9 +542,14 @@ public sealed partial class DiscoveryViewModel : ObservableObject
             timer.Stop();
             runningScan?.Dispose();
             runningScan = null;
+            hasScanned = true;
             IsScanning = false;
         }
     }
+
+    private static string FormatElapsed(TimeSpan elapsed) => elapsed.TotalMinutes >= 1
+        ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:D2}s"
+        : $"{elapsed.TotalSeconds:F1}s";
 
     [RelayCommand]
     private void Cancel()
@@ -601,7 +566,7 @@ public sealed partial class DiscoveryViewModel : ObservableObject
         }
 
         var package = new DataPackage();
-        package.SetText(string.Join(Environment.NewLine, Hosts.Select(h => h.IpAddress)));
+        package.SetText(string.Join(Environment.NewLine, FilteredHosts.Select(h => h.IpAddress)));
         Clipboard.SetContent(package);
         StatusText = $"Copied {HostCountTitle} to the clipboard.";
     }
@@ -616,20 +581,14 @@ public sealed partial class DiscoveryViewModel : ObservableObject
         }
 
         string csv = FileSaver.ToCsv(
-            Hosts.Select(h => new[] { h.IpAddress, h.Source, h.FoundAt.ToString("HH:mm:ss") }),
-            new[] { "ip_address", "source", "found_at" });
+            FilteredHosts.Select(h => new[] { h.IpAddress, h.Source, h.FoundAt.ToString("HH:mm:ss"), h.PortsSummary ?? string.Empty }),
+            new[] { "ip_address", "source", "found_at", "ports" });
 
         string? path = SaveFileAsync is not null
             ? await SaveFileAsync("hosts", ".csv", csv)
             : await ResultExporter.SaveTextAsync("hosts", ".csv", csv);
 
-        if (path is null)
-        {
-            StatusText = "Export cancelled.";
-            return;
-        }
-
-        StatusText = $"Saved {HostCountTitle} to {path}.";
+        StatusText = path is null ? "Export cancelled." : $"Saved {HostCountTitle} to {path}.";
     }
 
     // Helpers -----------------------------------------------------------------
@@ -673,13 +632,4 @@ public sealed partial class DiscoveryViewModel : ObservableObject
     }
 
     private void HideNotice() => IsNoticeOpen = false;
-
-    private void RefreshRecent()
-    {
-        RecentSubnets.Clear();
-        foreach (string recent in AppSettings.GetRecent(AppSettings.DiscoveryRecent))
-        {
-            RecentSubnets.Add(recent);
-        }
-    }
 }

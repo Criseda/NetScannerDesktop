@@ -14,6 +14,16 @@ namespace NetScannerDesktop.Services;
 public sealed record LocalSubnet(string Cidr, string AdapterName);
 
 /// <summary>
+/// One entry in the subnet box dropdown: a local network (labelled with its
+/// adapter) or a recent scan (labelled "Recent").
+/// </summary>
+public sealed record SubnetSuggestion(string Cidr, string Label)
+{
+    // AutoSuggestBox shows ToString() in the text box after a pick.
+    public override string ToString() => Cidr;
+}
+
+/// <summary>
 /// Finds the machine's own subnets via the OS network interfaces.
 /// Used to suggest scan targets and to pre-fill the discovery form.
 /// </summary>

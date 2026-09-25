@@ -214,6 +214,9 @@ public static class AppSettings
     public const string PortTimeout = "ports.timeout";
     public const string PortRecent = "ports.recent";
 
+    public const string DefaultPortRange = "defaults.portRange";
+    public const string DefaultTimeout = "defaults.timeoutMs";
+
     public const string AppTheme = "app.theme"; // 0=default, 1=light, 2=dark
     public const string SeenTeachingTip = "app.seenTeachingTip";
 }

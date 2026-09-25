@@ -4,73 +4,126 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:toolkit="using:CommunityToolkit.WinUI.Controls"
     mc:Ignorable="d">
 
     <Page.Resources>
-        <Style x:Key="CardBorderStyle" TargetType="Border">
-            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
-            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="8" />
-            <Setter Property="Padding" Value="20" />
+        <!-- Section spacing from the Windows 11 Settings app. -->
+        <x:Double x:Key="SettingsCardSpacing">4</x:Double>
+        <Style x:Key="SettingsSectionHeaderStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+            <Setter Property="Margin" Value="1,28,0,6" />
         </Style>
     </Page.Resources>
 
     <ScrollViewer>
-        <StackPanel Padding="32,24,32,32" Spacing="16" MaxWidth="800" HorizontalAlignment="Left">
-            <StackPanel Spacing="4">
-                <TextBlock Text="Settings" Style="{StaticResource TitleTextBlockStyle}" />
-                <TextBlock
-                    Text="Theme, defaults, and history. Applied immediately."
-                    Style="{StaticResource BodyTextBlockStyle}"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                    TextWrapping="Wrap" />
-            </StackPanel>
+        <StackPanel Padding="32,16,32,32" MaxWidth="1000" HorizontalAlignment="Stretch" Spacing="{StaticResource SettingsCardSpacing}">
+            <TextBlock Text="Settings" Style="{StaticResource TitleTextBlockStyle}" />
 
-            <Border Style="{StaticResource CardBorderStyle}">
-                <StackPanel Spacing="12">
-                    <TextBlock Text="Appearance" Style="{StaticResource SubtitleTextBlockStyle}" />
-                    <ComboBox
-                        Header="Theme"
-                        HorizontalAlignment="Stretch"
-                        SelectedIndex="{x:Bind ViewModel.SelectedThemeIndex, Mode=TwoWay}">
-                        <ComboBoxItem Content="System" />
-                        <ComboBoxItem Content="Light" />
-                        <ComboBoxItem Content="Dark" />
-                    </ComboBox>
-                </StackPanel>
-            </Border>
+            <TextBlock Text="Appearance" Style="{StaticResource SettingsSectionHeaderStyle}" />
+            <toolkit:SettingsCard Header="App theme" Description="Choose light, dark, or follow Windows.">
+                <toolkit:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE790;" />
+                </toolkit:SettingsCard.HeaderIcon>
+                <ComboBox SelectedIndex="{x:Bind ViewModel.SelectedThemeIndex, Mode=TwoWay}" MinWidth="160" AutomationProperties.Name="App theme">
+                    <ComboBoxItem Content="Use system setting" />
+                    <ComboBoxItem Content="Light" />
+                    <ComboBoxItem Content="Dark" />
+                </ComboBox>
+            </toolkit:SettingsCard>
 
-            <Border Style="{StaticResource CardBorderStyle}">
-                <StackPanel Spacing="12">
-                    <TextBlock Text="Port scan defaults" Style="{StaticResource SubtitleTextBlockStyle}" />
+            <TextBlock Text="Port scan" Style="{StaticResource SettingsSectionHeaderStyle}" />
+            <toolkit:SettingsCard Header="Default port range" Description="Used when you pick a host you haven't scanned before.">
+                <toolkit:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE839;" />
+                </toolkit:SettingsCard.HeaderIcon>
+                <StackPanel Spacing="4" MinWidth="160">
                     <TextBox
-                        Header="Default port range"
-                        Text="{x:Bind ViewModel.DefaultPortRange, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                    <TextBox
-                        Header="Default timeout (ms)"
-                        Text="{x:Bind ViewModel.DefaultTimeoutMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                    <Button Content="Save defaults" Command="{x:Bind ViewModel.SaveDefaultsCommand}" />
-                </StackPanel>
-            </Border>
-
-            <Border Style="{StaticResource CardBorderStyle}">
-                <StackPanel Spacing="12">
-                    <TextBlock Text="History" Style="{StaticResource SubtitleTextBlockStyle}" />
+                        Text="{x:Bind ViewModel.DefaultPortRange, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        PlaceholderText="1-1024"
+                        AutomationProperties.Name="Default port range"
+                        AutomationProperties.HelpText="{x:Bind ViewModel.PortRangeError, Mode=OneWay}" />
                     <TextBlock
-                        Text="Recent subnets and hosts are kept on this machine only."
-                        Style="{StaticResource BodyTextBlockStyle}"
-                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                        TextWrapping="Wrap" />
-                    <Button Content="Clear recent scans" Command="{x:Bind ViewModel.ClearHistoryCommand}" />
+                        Text="{x:Bind ViewModel.PortRangeError, Mode=OneWay}"
+                        Style="{StaticResource ErrorTextStyle}"
+                        MaxWidth="200"
+                        Visibility="{x:Bind ViewModel.HasPortRangeError, Mode=OneWay}" />
                 </StackPanel>
-            </Border>
+            </toolkit:SettingsCard>
+            <toolkit:SettingsCard Header="Default timeout per port" Description="Milliseconds to wait for each port. Clear it to use the engine default (500 ms).">
+                <toolkit:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE916;" />
+                </toolkit:SettingsCard.HeaderIcon>
+                <NumberBox
+                    Value="{x:Bind ViewModel.DefaultTimeoutMs, Mode=TwoWay}"
+                    Minimum="1"
+                    Maximum="60000"
+                    SmallChange="100"
+                    LargeChange="500"
+                    MinWidth="160"
+                    SpinButtonPlacementMode="Compact"
+                    ValidationMode="InvalidInputOverwritten"
+                    PlaceholderText="500"
+                    AutomationProperties.Name="Default timeout in milliseconds" />
+            </toolkit:SettingsCard>
 
-            <TextBlock
-                Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
-                Style="{StaticResource CaptionTextBlockStyle}"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                TextWrapping="Wrap" />
+            <TextBlock Text="Privacy" Style="{StaticResource SettingsSectionHeaderStyle}" />
+            <toolkit:SettingsCard Header="Scan history" Description="Recent subnets, hosts, and port results are kept on this PC only.">
+                <toolkit:SettingsCard.HeaderIcon>
+                    <FontIcon Glyph="&#xE81C;" />
+                </toolkit:SettingsCard.HeaderIcon>
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <TextBlock
+                        Text="{x:Bind ViewModel.HistoryStatus, Mode=OneWay}"
+                        Style="{StaticResource HintTextStyle}"
+                        VerticalAlignment="Center"
+                        AutomationProperties.LiveSetting="Polite" />
+                    <Button Content="Clear history">
+                        <Button.Flyout>
+                            <Flyout x:Name="ClearHistoryFlyout">
+                                <StackPanel Spacing="12" MaxWidth="280">
+                                    <TextBlock Text="Clear all recent subnets, hosts, and saved port results?" TextWrapping="Wrap" />
+                                    <Button Content="Clear" Style="{StaticResource AccentButtonStyle}" Click="ConfirmClearHistory_Click" />
+                                </StackPanel>
+                            </Flyout>
+                        </Button.Flyout>
+                    </Button>
+                </StackPanel>
+            </toolkit:SettingsCard>
+
+            <TextBlock Text="About" Style="{StaticResource SettingsSectionHeaderStyle}" />
+            <toolkit:SettingsExpander Header="NetScanner" Description="Fast, zero-privilege LAN discovery and port scanning." IsExpanded="False">
+                <toolkit:SettingsExpander.HeaderIcon>
+                    <FontIcon Glyph="&#xEC27;" />
+                </toolkit:SettingsExpander.HeaderIcon>
+                <TextBlock Style="{StaticResource HintTextStyle}" IsTextSelectionEnabled="True">
+                    <Run Text="Version " /><Run Text="{x:Bind ViewModel.AppVersion, Mode=OneWay}" />
+                </TextBlock>
+                <toolkit:SettingsExpander.Items>
+                    <toolkit:SettingsCard Header="Scan engine" Description="The ns engine does the scanning. Newer compatible releases can be installed from Discovery.">
+                        <TextBlock Style="{StaticResource HintTextStyle}" TextAlignment="Right" IsTextSelectionEnabled="True">
+                            <Run Text="Installed " /><Run Text="{x:Bind ViewModel.EngineVersion, Mode=OneWay}" />
+                            <LineBreak />
+                            <Run Text="Bundled " /><Run Text="{x:Bind ViewModel.BundledEngineVersion}" />
+                            <Run Text=" · Latest " /><Run Text="{x:Bind ViewModel.LatestEngineVersion, Mode=OneWay}" />
+                        </TextBlock>
+                    </toolkit:SettingsCard>
+                    <toolkit:SettingsCard Header="Crash log" Description="{x:Bind ViewModel.CrashLogPath}">
+                        <Button Content="Copy path" Click="CopyCrashLogPath_Click" />
+                    </toolkit:SettingsCard>
+                    <toolkit:SettingsCard HorizontalContentAlignment="Left" ContentAlignment="Vertical">
+                        <StackPanel Spacing="4">
+                            <TextBlock
+                                Text="NetScanner and this app are free software under the GNU GPL-3.0. You may run, study, share, and modify them; if you distribute them (including with ns.exe), provide the source under the same license."
+                                Style="{StaticResource HintTextStyle}" />
+                            <StackPanel Orientation="Horizontal" Margin="-12,4,0,0">
+                                <HyperlinkButton Content="NetScanner on GitHub" NavigateUri="https://github.com/Criseda/NetScanner" />
+                                <HyperlinkButton Content="Releases" NavigateUri="https://github.com/Criseda/NetScanner/releases" />
+                                <HyperlinkButton Content="GPL-3.0 license" NavigateUri="https://www.gnu.org/licenses/gpl-3.0.html" />
+                            </StackPanel>
+                        </StackPanel>
+                    </toolkit:SettingsCard>
+                </toolkit:SettingsExpander.Items>
+            </toolkit:SettingsExpander>
         </StackPanel>
     </ScrollViewer>
 </Page>

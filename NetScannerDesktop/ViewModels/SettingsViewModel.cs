@@ -1,3 +1,6 @@
+using System;
+using System.Globalization;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -7,41 +10,49 @@ using NetScannerDesktop.Services;
 namespace NetScannerDesktop.ViewModels;
 
 /// <summary>
-/// App settings: theme + defaults + history. Applies theme live via
-/// the callback the shell wires up (MainWindow.ApplyTheme).
+/// App settings: theme, port scan defaults, history, and the About
+/// details. Every change saves immediately, like Windows Settings.
 /// </summary>
 public sealed partial class SettingsViewModel : ObservableObject
 {
-    /// <summary>0=System, 1=Light, 2=Dark. Set by the view.</summary>
-    public System.Action<ElementTheme>? ApplyTheme { get; set; }
+    /// <summary>Applies a theme to the running window. Set by the view.</summary>
+    public Action<ElementTheme>? ApplyTheme { get; set; }
+
+    // Backing fields are initialised directly so loading saved values does
+    // not run the change handlers (which would re-save and re-apply).
+    [ObservableProperty]
+    private int selectedThemeIndex = AppSettings.GetInt(AppSettings.AppTheme, 0);
 
     [ObservableProperty]
-    private int selectedThemeIndex;
+    private string defaultPortRange = AppSettings.GetString(AppSettings.DefaultPortRange, "1-1024");
 
     [ObservableProperty]
-    private string defaultPortRange = "1-1024";
+    private double defaultTimeoutMs = ReadTimeout();
 
     [ObservableProperty]
-    private string defaultTimeoutMs = "500";
+    private string portRangeError = string.Empty;
 
     [ObservableProperty]
-    private string statusText = string.Empty;
+    private string historyStatus = string.Empty;
 
-    public SettingsViewModel()
-    {
-        SelectedThemeIndex = AppSettings.GetInt(AppSettings.AppTheme, 0);
-        DefaultPortRange = AppSettings.GetString("defaults.portRange", "1-1024");
-        if (string.IsNullOrWhiteSpace(DefaultPortRange))
-        {
-            DefaultPortRange = "1-1024";
-        }
+    [ObservableProperty]
+    private string appVersion = GetAppVersion();
 
-        DefaultTimeoutMs = AppSettings.GetString("defaults.timeoutMs", "500");
-        if (string.IsNullOrWhiteSpace(DefaultTimeoutMs))
-        {
-            DefaultTimeoutMs = "500";
-        }
-    }
+    [ObservableProperty]
+    private string engineVersion = "…";
+
+    [ObservableProperty]
+    private string latestEngineVersion = "…";
+
+    public bool HasPortRangeError => !string.IsNullOrEmpty(PortRangeError);
+
+    public string BundledEngineVersion => EngineUpdater.PinnedVersion;
+
+    public string CrashLogPath => App.CrashLogPath;
+
+    private static double ReadTimeout() =>
+        double.TryParse(AppSettings.GetString(AppSettings.DefaultTimeout, "500"),
+            NumberStyles.Integer, CultureInfo.InvariantCulture, out double t) ? t : double.NaN;
 
     partial void OnSelectedThemeIndexChanged(int value)
     {
@@ -52,30 +63,26 @@ public sealed partial class SettingsViewModel : ObservableObject
             2 => ElementTheme.Dark,
             _ => ElementTheme.Default,
         });
-        StatusText = "Theme applied.";
     }
 
-    [RelayCommand]
-    private void SaveDefaults()
+    partial void OnDefaultPortRangeChanged(string value)
     {
-        if (!NetworkValidation.TryParsePortRange(DefaultPortRange, out _, out _, out string rangeError))
+        if (NetworkValidation.TryParsePortRange(value, out int start, out int end, out string error))
         {
-            StatusText = rangeError;
-            return;
+            PortRangeError = string.Empty;
+            AppSettings.SetString(AppSettings.DefaultPortRange, $"{start}-{end}");
+        }
+        else
+        {
+            PortRangeError = error;
         }
 
-        if (!NetworkValidation.TryParseTimeout(DefaultTimeoutMs, out _, out string timeoutError))
-        {
-            StatusText = timeoutError;
-            return;
-        }
-
-        AppSettings.SetString("defaults.portRange", DefaultPortRange.Trim());
-        AppSettings.SetString("defaults.timeoutMs", DefaultTimeoutMs.Trim());
-        AppSettings.SetString(AppSettings.PortRange, DefaultPortRange.Trim());
-        AppSettings.SetString(AppSettings.PortTimeout, DefaultTimeoutMs.Trim());
-        StatusText = "Defaults saved. New Port scans will use them.";
+        OnPropertyChanged(nameof(HasPortRangeError));
     }
+
+    partial void OnDefaultTimeoutMsChanged(double value) =>
+        AppSettings.SetString(AppSettings.DefaultTimeout,
+            double.IsNaN(value) ? string.Empty : ((int)Math.Clamp(value, 1, 60000)).ToString(CultureInfo.InvariantCulture));
 
     [RelayCommand]
     private void ClearHistory()
@@ -83,8 +90,37 @@ public sealed partial class SettingsViewModel : ObservableObject
         AppSettings.SetString(AppSettings.DiscoveryRecent, string.Empty);
         AppSettings.SetString(AppSettings.PortRecent, string.Empty);
         ScanHistoryService.Clear();
-        StatusText = "Recent scans and port history cleared.";
+        HistoryStatus = "Cleared.";
     }
 
-    public Task LoadAsync() => Task.CompletedTask;
+    public async Task LoadAsync()
+    {
+        HistoryStatus = string.Empty;
+
+        try
+        {
+            EngineVersion = await new NetScannerService().GetVersionAsync(CancellationToken.None);
+        }
+        catch
+        {
+            EngineVersion = "not found";
+        }
+
+        // Shared with Discovery's check; silent when offline.
+        LatestEngineVersion = (await EngineUpdater.GetLatestReleaseAsync())?.Tag ?? "unknown";
+    }
+
+    private static string GetAppVersion()
+    {
+        try
+        {
+            var v = Windows.ApplicationModel.Package.Current.Id.Version;
+            return $"{v.Major}.{v.Minor}.{v.Build}.{v.Revision}";
+        }
+        catch
+        {
+            // Unpackaged: no package identity.
+            return System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "dev";
+        }
+    }
 }

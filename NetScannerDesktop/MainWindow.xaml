@@ -8,51 +8,53 @@
     mc:Ignorable="d"
     Title="NetScanner">
 
-    <Grid>
-        <!-- Full-window NavigationView: pane and content extend seamlessly to the top edge, matching Windows 11 Settings -->
+    <Grid x:Name="RootGrid">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!--
+            Native title bar control (Windows App SDK 1.7+): hosts the pane
+            toggle in the caption row like Windows 11 Settings, and sizes
+            itself around the caption buttons at any DPI.
+        -->
+        <TitleBar
+            x:Name="AppTitleBar"
+            Grid.Row="0"
+            Title="NetScanner"
+            IsBackButtonVisible="False"
+            IsPaneToggleButtonVisible="True"
+            PaneToggleRequested="AppTitleBar_PaneToggleRequested">
+            <TitleBar.IconSource>
+                <FontIconSource Glyph="&#xEC27;" />
+            </TitleBar.IconSource>
+        </TitleBar>
+
+        <!-- Top-level pages are peers, so there is no back stack between them. -->
         <NavigationView
             x:Name="Nav"
+            Grid.Row="1"
             PaneDisplayMode="Auto"
-            ExpandedModeThresholdWidth="800"
-            IsBackButtonVisible="Auto"
-            IsBackEnabled="False"
-            BackRequested="Nav_BackRequested"
+            IsBackButtonVisible="Collapsed"
+            IsPaneToggleButtonVisible="False"
+            IsTitleBarAutoPaddingEnabled="False"
             IsSettingsVisible="True"
             SelectionChanged="Nav_SelectionChanged">
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Discovery" Tag="Discovery" Icon="Scan" />
-                <NavigationViewItem Content="Port scan" Tag="Ports" Icon="Globe" />
+                <NavigationViewItem Content="Discovery" Tag="Discovery">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xEC27;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="Port scan" Tag="Ports">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE839;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
             </NavigationView.MenuItems>
-            <NavigationView.FooterMenuItems>
-                <NavigationViewItem Content="About" Tag="About" Icon="Help" />
-            </NavigationView.FooterMenuItems>
 
             <Frame x:Name="ContentFrame" />
         </NavigationView>
-
-        <!-- Seamless draggable title bar region overlaid between the navigation controls and caption buttons -->
-        <Grid
-            x:Name="AppTitleBar"
-            Height="40"
-            VerticalAlignment="Top"
-            Background="Transparent"
-            Margin="48,0,140,0">
-            <StackPanel
-                Orientation="Horizontal"
-                VerticalAlignment="Center"
-                Spacing="8"
-                IsHitTestVisible="False">
-                <FontIcon
-                    Glyph="&#xE774;"
-                    FontSize="14"
-                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
-                <TextBlock
-                    Text="NetScanner"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    FontWeight="SemiBold"
-                    VerticalAlignment="Center"
-                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            </StackPanel>
-        </Grid>
     </Grid>
 </Window>

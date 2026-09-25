@@ -1,6 +1,5 @@
 using System;
 using CommunityToolkit.Mvvm.ComponentModel;
-using Microsoft.UI.Xaml;
 
 namespace NetScannerDesktop.Models;
 
@@ -8,7 +7,7 @@ namespace NetScannerDesktop.Models;
 /// One live host found by <c>ns -s</c>.
 /// <see cref="FoundViaArp"/> is true when the host was quiet on TCP and only
 /// confirmed through the ARP harvest pass (printed as "(arp)" by ns).
-/// Also tracks port scan summary and status if ports have been scanned for this host.
+/// Also tracks the port scan summary if ports have been scanned for this host.
 /// </summary>
 public sealed partial class HostResult : ObservableObject
 {
@@ -18,19 +17,16 @@ public sealed partial class HostResult : ObservableObject
 
     public string Source => FoundViaArp ? "ARP" : "TCP";
 
-    public string FoundAtShort => FoundAt.ToString("HH:mm:ss");
+    public string FoundAtShort => FoundAt.ToString("T");
 
     [ObservableProperty]
     private string? portsSummary;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasScannedPortsVisibility))]
+    [NotifyPropertyChangedFor(nameof(PortsButtonText))]
     private bool hasScannedPorts;
 
-    [ObservableProperty]
-    private string portsButtonText = "Ports";
-
-    public Visibility HasScannedPortsVisibility => HasScannedPorts ? Visibility.Visible : Visibility.Collapsed;
+    public string PortsButtonText => HasScannedPorts ? "View ports" : "Scan ports";
 
     public HostResult(string ipAddress, bool foundViaArp, DateTime foundAt)
     {
@@ -43,6 +39,5 @@ public sealed partial class HostResult : ObservableObject
     {
         PortsSummary = summary;
         HasScannedPorts = !string.IsNullOrEmpty(summary);
-        PortsButtonText = HasScannedPorts ? "Ports ✓" : "Ports";
     }
 }
