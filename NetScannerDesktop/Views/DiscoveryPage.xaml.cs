@@ -111,6 +111,15 @@ public sealed partial class DiscoveryPage : Page, IResponsivePage
         }
     }
 
+    private void HostsList_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (PageHelpers.IsCopyShortcut(e) && HostsList.SelectedItem is HostResult host)
+        {
+            CopyIp(host);
+            e.Handled = true;
+        }
+    }
+
     private void ScanPorts_Click(object sender, RoutedEventArgs e)
     {
         if (HostFromTag(sender) is { } host)
@@ -131,25 +140,37 @@ public sealed partial class DiscoveryPage : Page, IResponsivePage
         }
     }
 
-    private void CopyHost_Click(object sender, RoutedEventArgs e)
+    // Copy submenu: one entry per column, plus everything as labelled lines.
+
+    private void CopyIp_Click(object sender, RoutedEventArgs e)
     {
         if (HostFromTag(sender) is { } host)
         {
-            ViewModel.CopyToClipboard(host.IpAddress, $"Copied {host.IpAddress} to the clipboard.");
+            CopyIp(host);
         }
     }
 
-    private void CopySummary_Click(object sender, RoutedEventArgs e)
+    private void CopyIp(HostResult host) =>
+        ViewModel.CopyToClipboard(host.IpAddress, $"Copied {host.IpAddress} to the clipboard.");
+
+    private void CopyName_Click(object sender, RoutedEventArgs e) => CopyField(sender, "name", h => h.Hostname);
+    private void CopyMac_Click(object sender, RoutedEventArgs e) => CopyField(sender, "MAC address", h => h.MacAddress);
+    private void CopyVendor_Click(object sender, RoutedEventArgs e) => CopyField(sender, "manufacturer", h => h.Vendor);
+    private void CopyPorts_Click(object sender, RoutedEventArgs e) => CopyField(sender, "open ports", h => h.PortsDetail);
+
+    private void CopyAll_Click(object sender, RoutedEventArgs e)
     {
         if (HostFromTag(sender) is { } host)
         {
-            string summary = string.Join(" - ", new[]
-            {
-                host.IpAddress, host.DetailsLine, $"found via {host.Source} at {host.FoundAtShort}",
-                host.HasScannedPorts ? $"open ports: {(host.PortsDetail.Length > 0 ? host.PortsDetail : "none")}" : null,
-            }.Where(s => !string.IsNullOrEmpty(s)));
+            ViewModel.CopyToClipboard(host.AllDetailsText, $"Copied all details for {host.IpAddress}.");
+        }
+    }
 
-            ViewModel.CopyToClipboard(summary, $"Copied details for {host.IpAddress}.");
+    private void CopyField(object sender, string what, Func<HostResult, string?> field)
+    {
+        if (HostFromTag(sender) is { } host && field(host) is { Length: > 0 } text)
+        {
+            ViewModel.CopyToClipboard(text, $"Copied {what} for {host.IpAddress}: {text}");
         }
     }
 

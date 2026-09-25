@@ -1,7 +1,11 @@
 using System;
 using System.Threading.Tasks;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Windows.System;
+using Windows.UI.Core;
 using NetScannerDesktop.Services;
 
 namespace NetScannerDesktop.Views;
@@ -55,6 +59,16 @@ internal static class PageHelpers
             }
         });
     }
+
+    /// <summary>
+    /// Plain Ctrl+C (no Shift or Alt) in a results table: copies the
+    /// selected row. Ctrl+Shift+C stays the page-wide "copy the list".
+    /// </summary>
+    public static bool IsCopyShortcut(KeyRoutedEventArgs e) =>
+        e.Key == VirtualKey.C && IsDown(VirtualKey.Control) && !IsDown(VirtualKey.Shift) && !IsDown(VirtualKey.Menu);
+
+    private static bool IsDown(VirtualKey key) =>
+        InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(CoreVirtualKeyStates.Down);
 
     /// <summary>Roomier margins on a wide window, tighter ones beside the icon rail.</summary>
     public static void ApplyPagePadding(bool wide, Grid rootGrid) =>

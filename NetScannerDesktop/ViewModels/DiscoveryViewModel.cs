@@ -524,14 +524,46 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
         NotifyEmptyStateChanged();
     }
 
+    // Copy button: the main part copies IP addresses; its dropdown offers
+    // the other columns and the whole table. All act on the visible rows.
+
     [RelayCommand]
-    private void CopyResults()
+    private void CopyResults() => CopyColumn(h => h.IpAddress, "IP addresses");
+
+    [RelayCommand]
+    private void CopyNames() => CopyColumn(h => h.Hostname, "names");
+
+    [RelayCommand]
+    private void CopyMacAddresses() => CopyColumn(h => h.MacAddress, "MAC addresses");
+
+    [RelayCommand]
+    private void CopyTable()
     {
         if (VisibleHosts.Count > 0)
         {
-            CopyToClipboard(string.Join(Environment.NewLine, VisibleHosts.Select(h => h.IpAddress)),
-                $"Copied {VisibleHosts.Count:N0} IP addresses to the clipboard.");
+            CopyToClipboard(HostResult.FormatTable(VisibleHosts), $"Copied a table of {VisibleHosts.Count:N0} hosts to the clipboard.");
         }
+    }
+
+    /// <summary>One value per line, skipping hosts where that field is unknown.</summary>
+    private void CopyColumn(Func<HostResult, string?> field, string what)
+    {
+        if (VisibleHosts.Count == 0)
+        {
+            return;
+        }
+
+        List<string> values = VisibleHosts.Select(field).OfType<string>().Where(v => v.Length > 0).ToList();
+        int missing = VisibleHosts.Count - values.Count;
+        if (values.Count == 0)
+        {
+            StatusText = $"No {what} known for the listed hosts.";
+            return;
+        }
+
+        CopyToClipboard(string.Join(Environment.NewLine, values),
+            $"Copied {values.Count:N0} {what} to the clipboard" +
+            (missing > 0 ? $" ({missing:N0} {(missing == 1 ? "host has" : "hosts have")} none)." : "."));
     }
 
     [RelayCommand]

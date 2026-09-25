@@ -269,6 +269,12 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
         NotifyEmptyStateChanged();
     }
 
+    /// <summary>The host the listed ports belong to (the box may have been edited since the scan).</summary>
+    public string ResultHost => resultTarget ?? IpAddress.Trim();
+
+    // Copy button: the main part copies the port numbers; its dropdown
+    // offers host:port lines and the whole table. All act on the visible rows.
+
     [RelayCommand]
     private void CopyResults()
     {
@@ -276,6 +282,26 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
         {
             CopyToClipboard(string.Join(", ", VisiblePorts.Select(p => p.Port)),
                 $"Copied {VisiblePorts.Count:N0} ports to the clipboard.");
+        }
+    }
+
+    [RelayCommand]
+    private void CopyHostPorts()
+    {
+        if (VisiblePorts.Count > 0)
+        {
+            CopyToClipboard(string.Join(Environment.NewLine, VisiblePorts.Select(p => $"{ResultHost}:{p.Port}")),
+                $"Copied {VisiblePorts.Count:N0} host:port lines to the clipboard.");
+        }
+    }
+
+    [RelayCommand]
+    private void CopyTable()
+    {
+        if (VisiblePorts.Count > 0)
+        {
+            CopyToClipboard(PortResult.FormatTable(ResultHost, VisiblePorts),
+                $"Copied a table of {VisiblePorts.Count:N0} ports to the clipboard.");
         }
     }
 
@@ -288,7 +314,7 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
             return;
         }
 
-        string host = resultTarget ?? IpAddress.Trim();
+        string host = ResultHost;
         string csv = Csv.Format(
             VisiblePorts.Select(p => new[]
             {

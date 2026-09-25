@@ -247,15 +247,25 @@
                         AutomationProperties.Name="Filter hosts"
                         Text="{x:Bind ViewModel.FilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-                        <Button
+                        <!-- Main part copies the IP list; the arrow picks another column or the whole table. -->
+                        <SplitButton
                             Command="{x:Bind ViewModel.CopyResultsCommand}"
-                            ToolTipService.ToolTip="Copy all IP addresses (Ctrl+Shift+C)"
-                            AutomationProperties.Name="Copy all IP addresses">
+                            ToolTipService.ToolTip="Copy IP addresses (Ctrl+Shift+C). The arrow has more."
+                            AutomationProperties.Name="Copy IP addresses">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <FontIcon Glyph="&#xE8C8;" FontSize="14" />
                                 <TextBlock Text="Copy" />
                             </StackPanel>
-                        </Button>
+                            <SplitButton.Flyout>
+                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                    <MenuFlyoutItem Text="IP addresses" Command="{x:Bind ViewModel.CopyResultsCommand}" KeyboardAcceleratorTextOverride="Ctrl+Shift+C" />
+                                    <MenuFlyoutItem Text="Names" Command="{x:Bind ViewModel.CopyNamesCommand}" />
+                                    <MenuFlyoutItem Text="MAC addresses" Command="{x:Bind ViewModel.CopyMacAddressesCommand}" />
+                                    <MenuFlyoutSeparator />
+                                    <MenuFlyoutItem Text="Everything (as a table)" Command="{x:Bind ViewModel.CopyTableCommand}" />
+                                </MenuFlyout>
+                            </SplitButton.Flyout>
+                        </SplitButton>
                         <Button Command="{x:Bind ViewModel.ExportCsvCommand}" AutomationProperties.Name="Export results as CSV">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <FontIcon Glyph="&#xEDE1;" FontSize="14" />
@@ -367,6 +377,7 @@
                             ItemContainerStyle="{StaticResource TableRowContainerStyle}"
                             SelectionMode="Single"
                             DoubleTapped="HostsList_DoubleTapped"
+                            KeyDown="HostsList_KeyDown"
                             AutomationProperties.Name="Discovered hosts">
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:HostResult">
@@ -376,10 +387,17 @@
                                                 <MenuFlyoutItem Text="Scan ports" Tag="{x:Bind IpAddress}" Click="ScanPorts_Click">
                                                     <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE839;" /></MenuFlyoutItem.Icon>
                                                 </MenuFlyoutItem>
-                                                <MenuFlyoutItem Text="Copy IP address" Tag="{x:Bind IpAddress}" Click="CopyHost_Click">
-                                                    <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8C8;" /></MenuFlyoutItem.Icon>
-                                                </MenuFlyoutItem>
-                                                <MenuFlyoutItem Text="Copy details" Tag="{x:Bind IpAddress}" Click="CopySummary_Click" />
+                                                <!-- One entry per column; unknown fields are greyed out. -->
+                                                <MenuFlyoutSubItem Text="Copy">
+                                                    <MenuFlyoutSubItem.Icon><FontIcon Glyph="&#xE8C8;" /></MenuFlyoutSubItem.Icon>
+                                                    <MenuFlyoutItem Text="IP address" Tag="{x:Bind IpAddress}" Click="CopyIp_Click" KeyboardAcceleratorTextOverride="Ctrl+C" />
+                                                    <MenuFlyoutItem Text="Name" Tag="{x:Bind IpAddress}" Click="CopyName_Click" IsEnabled="{x:Bind HasHostname, Mode=OneWay}" />
+                                                    <MenuFlyoutItem Text="MAC address" Tag="{x:Bind IpAddress}" Click="CopyMac_Click" IsEnabled="{x:Bind HasMacAddress, Mode=OneWay}" />
+                                                    <MenuFlyoutItem Text="Manufacturer" Tag="{x:Bind IpAddress}" Click="CopyVendor_Click" IsEnabled="{x:Bind HasVendor, Mode=OneWay}" />
+                                                    <MenuFlyoutItem Text="Open ports" Tag="{x:Bind IpAddress}" Click="CopyPorts_Click" IsEnabled="{x:Bind HasOpenPorts, Mode=OneWay}" />
+                                                    <MenuFlyoutSeparator />
+                                                    <MenuFlyoutItem Text="All details" Tag="{x:Bind IpAddress}" Click="CopyAll_Click" />
+                                                </MenuFlyoutSubItem>
                                                 <MenuFlyoutSeparator />
                                                 <MenuFlyoutItem Text="Open in browser (HTTP)" Tag="{x:Bind IpAddress}" Click="OpenHttp_Click">
                                                     <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE774;" /></MenuFlyoutItem.Icon>

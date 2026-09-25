@@ -110,9 +110,12 @@ public sealed partial class PortScanPage : Page, IResponsivePage
 
     // Port actions -------------------------------------------------------------
 
-    private string Host => ViewModel.IpAddress.Trim();
+    private string Host => ViewModel.ResultHost;
 
     private static int? PortFromTag(object sender) => (sender as FrameworkElement)?.Tag as int?;
+
+    private PortResult? PortResultFromTag(object sender) =>
+        PortFromTag(sender) is int port ? ViewModel.OpenPorts.FirstOrDefault(p => p.Port == port) : null;
 
     private void PortsList_DoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
     {
@@ -121,6 +124,15 @@ public sealed partial class PortScanPage : Page, IResponsivePage
         if (PortsList.SelectedItem is PortResult port)
         {
             CopyText($"{Host}:{port.Port}");
+        }
+    }
+
+    private void PortsList_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (PageHelpers.IsCopyShortcut(e) && PortsList.SelectedItem is PortResult port)
+        {
+            CopyText($"{Host}:{port.Port}");
+            e.Handled = true;
         }
     }
 
@@ -140,11 +152,27 @@ public sealed partial class PortScanPage : Page, IResponsivePage
         }
     }
 
+    private void CopyService_Click(object sender, RoutedEventArgs e)
+    {
+        if (PortResultFromTag(sender) is { Service: { } service })
+        {
+            CopyText(service);
+        }
+    }
+
+    private void CopyPortDetails_Click(object sender, RoutedEventArgs e)
+    {
+        if (PortResultFromTag(sender) is { } port)
+        {
+            ViewModel.CopyToClipboard(port.DetailsText(Host), $"Copied all details for {Host}:{port.Port}.");
+        }
+    }
+
     private void OpenWebPort_Click(object sender, RoutedEventArgs e)
     {
         if (PortFromTag(sender) is int port)
         {
-            Open(ViewModel.OpenPorts.FirstOrDefault(p => p.Port == port)?.WebScheme ?? "http", port);
+            Open(PortResultFromTag(sender)?.WebScheme ?? "http", port);
         }
     }
 
