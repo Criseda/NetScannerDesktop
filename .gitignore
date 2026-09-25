@@ -364,6 +364,3 @@ MigrationBackup/
 NetScannerDesktop/Assets/Tools/ns.exe
 NetScannerDesktop/Assets/Tools/ns.version.txt
 NetScannerDesktop/Assets/Tools/*.zip
-# Legacy folder that used to hold a checked-in binary.
-Tools/ns.exe
-Tools/ns.pdb

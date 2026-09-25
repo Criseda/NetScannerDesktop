@@ -3,15 +3,12 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using NetScannerDesktop.Models;
 using NetScannerDesktop.Services;
-using Windows.ApplicationModel.DataTransfer;
 
 namespace NetScannerDesktop.ViewModels;
 
@@ -20,11 +17,10 @@ namespace NetScannerDesktop.ViewModels;
 /// Mirrors <see cref="DiscoveryViewModel"/> on purpose so both pages read
 /// the same way.
 /// </summary>
-public sealed partial class PortScanViewModel : ObservableObject
+public sealed partial class PortScanViewModel : ScanViewModelBase
 {
-    private readonly INetScannerService scanner;
-    private readonly EngineLog log = new();
-    private CancellationTokenSource? runningScan;
+    private readonly FilteredSortedView<PortResult> portView =
+        new(Comparer<PortResult>.Create((a, b) => a.Port.CompareTo(b.Port)));
 
     public const int LargePortScanConfirmThreshold = 10000;
 
@@ -37,39 +33,67 @@ public sealed partial class PortScanViewModel : ObservableObject
         new("All ports", "1-65535"),
     ];
 
-    /// <summary>Set by the view to confirm very large port ranges.</summary>
-    public Func<string, Task<bool>>? ConfirmLargeScanAsync { get; set; }
-
-    /// <summary>Set by the view: (suggestedName, extension, content) -> saved path or null.</summary>
-    public Func<string, string, string, Task<string?>>? SaveFileAsync { get; set; }
-
     public PortScanViewModel() : this(new NetScannerService())
     {
     }
 
-    public PortScanViewModel(INetScannerService scanner)
+    public PortScanViewModel(INetScannerService scanner) : base(scanner)
     {
-        this.scanner = scanner;
-
-        // Titles and empty-state hints follow the list automatically.
-        OpenPorts.CollectionChanged += (_, _) =>
-        {
-            OnPropertyChanged(nameof(PortCountTitle));
-            OnPropertyChanged(nameof(FilteredPorts));
-            NotifyEmptyStateChanged();
-        };
+        StatusText = "Enter a host to start.";
+        VisiblePorts.CollectionChanged += (_, _) => NotifyEmptyStateChanged();
 
         ScanHistoryService.HistoryCleared += () =>
         {
             RefreshRecent();
             if (!IsScanning)
             {
-                OpenPorts.Clear();
+                ClearPorts();
                 resultTarget = null;
                 NotifyEmptyStateChanged();
                 StatusText = "History cleared.";
             }
         };
+    }
+
+    // Results ----------------------------------------------------------------
+
+    /// <summary>Every open port of the shown result.</summary>
+    public IReadOnlyList<PortResult> OpenPorts => portView.Source;
+
+    /// <summary>Open ports matching the filter, ascending. Bind the list to this.</summary>
+    public ObservableCollection<PortResult> VisiblePorts => portView.View;
+
+    public int PortCount => OpenPorts.Count;
+
+    public string PortCountTitle => PortCount == 1 ? "1 open port" : $"{PortCount:N0} open ports";
+
+    private void AddPort(int port)
+    {
+        if (OpenPorts.All(p => p.Port != port))
+        {
+            portView.Add(new PortResult(port));
+            OnPropertyChanged(nameof(PortCount));
+            OnPropertyChanged(nameof(PortCountTitle));
+        }
+    }
+
+    private void ClearPorts()
+    {
+        portView.Clear();
+        OnPropertyChanged(nameof(PortCount));
+        OnPropertyChanged(nameof(PortCountTitle));
+    }
+
+    [ObservableProperty]
+    private string filterText = string.Empty;
+
+    partial void OnFilterTextChanged(string value)
+    {
+        string f = value.Trim();
+        portView.SetFilter(f.Length == 0 ? _ => true : p =>
+            p.Port.ToString(CultureInfo.InvariantCulture).Contains(f, StringComparison.Ordinal) ||
+            p.Service.Contains(f, StringComparison.OrdinalIgnoreCase) ||
+            p.Category.Contains(f, StringComparison.OrdinalIgnoreCase));
     }
 
     // Form -----------------------------------------------------------------
@@ -84,53 +108,7 @@ public sealed partial class PortScanViewModel : ObservableObject
     [ObservableProperty]
     private double timeoutMs = 500;
 
-    [ObservableProperty]
-    private bool isScanning;
-
-    [ObservableProperty]
-    private string statusText = "Enter a host to start.";
-
-    [ObservableProperty]
-    private string logText = string.Empty;
-
-    [ObservableProperty]
-    private bool isNoticeOpen;
-
-    [ObservableProperty]
-    private string noticeText = string.Empty;
-
-    [ObservableProperty]
-    private InfoBarSeverity noticeSeverity = InfoBarSeverity.Informational;
-
-    public ObservableCollection<PortResult> OpenPorts { get; } = new();
-
     public ObservableCollection<string> RecentIps { get; } = new();
-
-    public string PortCountTitle => OpenPorts.Count == 1 ? "1 open port" : $"{OpenPorts.Count:N0} open ports";
-
-    [ObservableProperty]
-    private string filterText = string.Empty;
-
-    partial void OnFilterTextChanged(string value) => OnPropertyChanged(nameof(FilteredPorts));
-
-    public IEnumerable<PortResult> FilteredPorts
-    {
-        get
-        {
-            if (string.IsNullOrWhiteSpace(FilterText))
-            {
-                return OpenPorts.OrderBy(p => p.Port).ToList();
-            }
-
-            string f = FilterText.Trim();
-            return OpenPorts
-                .Where(p => p.Port.ToString().Contains(f, StringComparison.OrdinalIgnoreCase)
-                    || p.Service.Contains(f, StringComparison.OrdinalIgnoreCase)
-                    || p.Category.Contains(f, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(p => p.Port)
-                .ToList();
-        }
-    }
 
     public string PortEstimateText
     {
@@ -151,21 +129,21 @@ public sealed partial class PortScanViewModel : ObservableObject
     /// <summary>The host the shown results belong to (a finished scan or history); null before any.</summary>
     private string? resultTarget;
 
-    public bool ShowEmptyState => !IsScanning && OpenPorts.Count == 0;
+    public bool ShowEmptyState => !IsScanning && VisiblePorts.Count == 0;
 
-    public string EmptyStateGlyph => resultTarget is null ? "" : "";
+    private bool IsFilteredOut => PortCount > 0;
 
-    public string EmptyStateTitle => resultTarget is null ? "Ready to scan ports" : "No open ports found";
+    public string EmptyStateGlyph => IsFilteredOut ? "" : resultTarget is null ? "" : "";
 
-    public string EmptyStateMessage => resultTarget is null
-        ? "Enter a host, or pick one from Discovery, to probe it for open TCP services."
-        : $"Every port scanned on {resultTarget} was closed or filtered. Try a wider range or a longer timeout.";
+    public string EmptyStateTitle => IsFilteredOut ? "No matching ports"
+        : resultTarget is null ? "Ready to scan ports"
+        : "No open ports found";
 
-    partial void OnIsScanningChanged(bool value)
-    {
-        ScanCommand.NotifyCanExecuteChanged();
-        NotifyEmptyStateChanged();
-    }
+    public string EmptyStateMessage => IsFilteredOut
+        ? $"None of the {PortCountTitle} match “{FilterText.Trim()}”."
+        : resultTarget is null
+            ? "Enter a host, or pick one from Discovery, to probe it for open TCP services."
+            : $"Every port scanned on {resultTarget} was closed or filtered. Try a wider range or a longer timeout.";
 
     private void NotifyEmptyStateChanged()
     {
@@ -173,6 +151,12 @@ public sealed partial class PortScanViewModel : ObservableObject
         OnPropertyChanged(nameof(EmptyStateGlyph));
         OnPropertyChanged(nameof(EmptyStateTitle));
         OnPropertyChanged(nameof(EmptyStateMessage));
+    }
+
+    protected override void OnScanStateChanged()
+    {
+        ScanCommand.NotifyCanExecuteChanged();
+        NotifyEmptyStateChanged();
     }
 
     // Validation -------------------------------------------------------------
@@ -193,11 +177,6 @@ public sealed partial class PortScanViewModel : ObservableObject
 
     /// <summary>Engine value for --timeout: null (engine default) when the box is cleared.</summary>
     private int? TimeoutArgument => double.IsNaN(TimeoutMs) ? null : (int)Math.Clamp(TimeoutMs, 1, 60000);
-
-    [ObservableProperty]
-    private bool isEngineMissing;
-
-    partial void OnIsEngineMissingChanged(bool value) => ScanCommand.NotifyCanExecuteChanged();
 
     public bool CanScan => !IsScanning
         && !IsEngineMissing
@@ -236,23 +215,14 @@ public sealed partial class PortScanViewModel : ObservableObject
         }
 
         int portCount = end - start + 1;
-        if (portCount > LargePortScanConfirmThreshold && ConfirmLargeScanAsync is not null)
+        if (portCount > LargePortScanConfirmThreshold && ConfirmLargeScanAsync is not null &&
+            !await ConfirmLargeScanAsync($"This will probe {portCount:N0} ports and may take a while. Continue?"))
         {
-            bool ok = await ConfirmLargeScanAsync(
-                $"This will probe {portCount:N0} ports and may take a while. Continue?");
-            if (!ok)
-            {
-                StatusText = "Large scan not started.";
-                return;
-            }
+            StatusText = "Large scan not started.";
+            return;
         }
 
-        HideNotice();
-        OpenPorts.Clear();
-        log.Clear();
-        LogText = string.Empty;
-        OnPropertyChanged(nameof(LogLineCountText));
-
+        ClearPorts();
         string target = IpAddress.Trim();
         string range = $"{start}-{end}";
         int? timeout = TimeoutArgument;
@@ -262,137 +232,57 @@ public sealed partial class PortScanViewModel : ObservableObject
         AppSettings.PushRecent(AppSettings.PortRecent, target);
         RefreshRecent();
 
-        IsScanning = true;
-        runningScan = new CancellationTokenSource();
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        void ShowProgress() =>
-            StatusText = $"Scanning {target} • {FormatElapsed(stopwatch.Elapsed)} • {PortCountTitle}…";
-
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
-        timer.Tick += (_, _) => ShowProgress();
-        timer.Start();
-        ShowProgress();
-
         var portProgress = new Progress<int>(port =>
         {
-            if (OpenPorts.All(p => p.Port != port))
-            {
-                OpenPorts.Add(new PortResult(port));
-                ShowProgress();
-            }
+            AddPort(port);
+            RefreshProgress();
         });
-        var logProgress = new Progress<string>(AppendLogLine);
 
-        try
-        {
-            PortScanResult result = await scanner.ScanPortsAsync(
-                target, start, end, portProgress, logProgress, runningScan.Token, timeout);
+        await RunScanAsync(
+            elapsed => $"Scanning {target} • {FormatElapsed(elapsed)} • {PortCountTitle}…",
+            async (token, stopwatch) =>
+            {
+                PortScanResult result = await Scanner.ScanPortsAsync(
+                    target, start, end, portProgress, new Progress<string>(AppendLogLine), token, timeout);
 
-            FlushLog();
-            resultTarget = target;
-            string total = FormatElapsed(stopwatch.Elapsed);
-            StatusText = result.OpenPorts.Count == 0
-                ? $"No open ports on {target} ({range}, {total})."
-                : $"{PortCountTitle} on {target} ({range}, {total}).";
+                resultTarget = target;
+                string total = FormatElapsed(stopwatch.Elapsed);
+                StatusText = result.OpenPorts.Count == 0
+                    ? $"No open ports on {target} ({range}, {total})."
+                    : $"{PortCountTitle} on {target} ({range}, {total}).";
 
-            ScanHistoryService.Record(target, range, OpenPorts);
-        }
-        catch (OperationCanceledException)
-        {
-            FlushLog();
-            StatusText = $"Cancelled after {FormatElapsed(stopwatch.Elapsed)} — {PortCountTitle} found.";
-        }
-        catch (Exception ex)
-        {
-            FlushLog();
-            ShowNotice(ex.Message, InfoBarSeverity.Error);
-            StatusText = "Scan failed.";
-        }
-        finally
-        {
-            timer.Stop();
-            runningScan?.Dispose();
-            runningScan = null;
-            IsScanning = false;
-        }
-    }
+                ScanHistoryService.Record(target, range, OpenPorts);
+            },
+            elapsed => $"Cancelled after {FormatElapsed(elapsed)} — {PortCountTitle} found.");
 
-    private static string FormatElapsed(TimeSpan elapsed) => elapsed.TotalMinutes >= 1
-        ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:D2}s"
-        : $"{elapsed.TotalSeconds:F1}s";
-
-    [RelayCommand]
-    private void Cancel()
-    {
-        runningScan?.Cancel();
+        NotifyEmptyStateChanged();
     }
 
     [RelayCommand]
     private void CopyResults()
     {
-        if (OpenPorts.Count == 0)
+        if (VisiblePorts.Count > 0)
         {
-            return;
+            CopyToClipboard(string.Join(", ", VisiblePorts.Select(p => p.Port)),
+                $"Copied {VisiblePorts.Count:N0} ports to the clipboard.");
         }
-
-        var package = new DataPackage();
-        package.SetText(string.Join(", ", FilteredPorts.Select(p => p.Port)));
-        Clipboard.SetContent(package);
-        StatusText = $"Copied {PortCountTitle} to the clipboard.";
     }
 
     [RelayCommand]
     private async Task ExportCsvAsync()
     {
-        if (OpenPorts.Count == 0)
+        if (VisiblePorts.Count == 0)
         {
             ShowNotice("Nothing to export yet — run a scan first.", InfoBarSeverity.Warning);
             return;
         }
 
         string host = resultTarget ?? IpAddress.Trim();
-        string csv = FileSaver.ToCsv(
-            FilteredPorts.Select(p => new[] { host, p.Port.ToString(), p.Service }),
+        string csv = Csv.Format(
+            VisiblePorts.Select(p => new[] { host, p.Port.ToString(CultureInfo.InvariantCulture), p.Service }),
             new[] { "ip_address", "port", "service" });
 
-        string? path = SaveFileAsync is not null
-            ? await SaveFileAsync("ports", ".csv", csv)
-            : await ResultExporter.SaveTextAsync("ports", ".csv", csv);
-
-        StatusText = path is null ? "Export cancelled." : $"Saved {PortCountTitle} to {path}.";
-    }
-
-    // Helpers -----------------------------------------------------------------
-
-    public string LogLineCountText => log.LineCountText;
-
-    private void AppendLogLine(string line)
-    {
-        if (log.Append(line))
-        {
-            LogText = log.Text;
-            OnPropertyChanged(nameof(LogLineCountText));
-        }
-    }
-
-    private void FlushLog()
-    {
-        LogText = log.Flush();
-        OnPropertyChanged(nameof(LogLineCountText));
-    }
-
-    [RelayCommand]
-    private void CopyLog()
-    {
-        if (string.IsNullOrEmpty(LogText))
-        {
-            return;
-        }
-
-        var package = new DataPackage();
-        package.SetText(LogText);
-        Clipboard.SetContent(package);
-        StatusText = $"Copied engine log ({LogLineCountText}) to the clipboard.";
+        await SaveCsvAsync("ports", csv, $"{VisiblePorts.Count:N0} ports");
     }
 
     /// <summary>
@@ -401,24 +291,21 @@ public sealed partial class PortScanViewModel : ObservableObject
     /// </summary>
     public void LoadTargetIp(string ip)
     {
-        if (string.IsNullOrWhiteSpace(ip))
+        if (string.IsNullOrWhiteSpace(ip) || IsScanning)
         {
             return;
         }
 
         string cleanIp = ip.Trim();
         IpAddress = cleanIp;
-
-        OpenPorts.Clear();
-        log.Clear();
-        LogText = string.Empty;
-        OnPropertyChanged(nameof(LogLineCountText));
+        ClearPorts();
+        ClearLog();
 
         if (ScanHistoryService.TryGet(cleanIp, out var history) && history != null)
         {
-            foreach (var p in history.GetPortResults())
+            foreach (PortResult port in history.GetPortResults())
             {
-                OpenPorts.Add(p);
+                AddPort(port.Port);
             }
 
             if (!string.IsNullOrEmpty(history.PortRange))
@@ -438,15 +325,6 @@ public sealed partial class PortScanViewModel : ObservableObject
 
         NotifyEmptyStateChanged();
     }
-
-    private void ShowNotice(string text, InfoBarSeverity severity)
-    {
-        NoticeText = text;
-        NoticeSeverity = severity;
-        IsNoticeOpen = true;
-    }
-
-    private void HideNotice() => IsNoticeOpen = false;
 
     private bool loaded;
 
@@ -487,17 +365,7 @@ public sealed partial class PortScanViewModel : ObservableObject
         }
 
         RefreshRecent();
-
-        try
-        {
-            _ = await scanner.GetVersionAsync(CancellationToken.None);
-            IsEngineMissing = false;
-        }
-        catch (Exception ex)
-        {
-            IsEngineMissing = true;
-            ShowNotice($"Engine not found: {ex.Message}", InfoBarSeverity.Error);
-        }
+        await ProbeEngineAsync();
     }
 
     private void RefreshRecent()

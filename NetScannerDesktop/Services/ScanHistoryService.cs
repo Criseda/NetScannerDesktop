@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using NetScannerDesktop.Models;
 
 namespace NetScannerDesktop.Services;
@@ -134,7 +135,7 @@ public static class ScanHistoryService
             if (File.Exists(path))
             {
                 string json = File.ReadAllText(path);
-                var items = JsonSerializer.Deserialize<List<HostPortHistory>>(json);
+                var items = JsonSerializer.Deserialize(json, HistoryJsonContext.Default.ListHostPortHistory);
                 if (items != null)
                 {
                     lock (SyncRoot)
@@ -167,8 +168,9 @@ public static class ScanHistoryService
                 Directory.CreateDirectory(dir);
             }
 
-            string json = JsonSerializer.Serialize(History.Values.ToList());
-            File.WriteAllText(path, json);
+            string json = JsonSerializer.Serialize(History.Values.ToList(), HistoryJsonContext.Default.ListHostPortHistory);
+            File.WriteAllText(path + ".tmp", json);
+            File.Move(path + ".tmp", path, overwrite: true);
         }
         catch
         {
@@ -190,4 +192,13 @@ public static class ScanHistoryService
         {
         }
     }
+}
+
+/// <summary>
+/// Source-generated serializer for history.json: no runtime reflection,
+/// so it keeps working in trimmed Release builds.
+/// </summary>
+[JsonSerializable(typeof(List<HostPortHistory>))]
+internal sealed partial class HistoryJsonContext : JsonSerializerContext
+{
 }

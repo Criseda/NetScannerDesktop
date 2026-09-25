@@ -5,9 +5,8 @@ using System.Threading.Tasks;
 namespace NetScannerDesktop.Services;
 
 /// <summary>
-/// Saves scan results as files under Documents\NetScanner. A plain folder
-/// write keeps the code simple and works the same packaged or unpackaged,
-/// unlike the file picker which needs extra window-handle setup.
+/// Fallback save target when the file picker is unavailable: a plain
+/// write under Documents\NetScanner, the same packaged or unpackaged.
 /// </summary>
 public static class ResultExporter
 {
@@ -25,7 +24,4 @@ public static class ResultExporter
         await File.WriteAllTextAsync(fullPath, content);
         return fullPath;
     }
-
-    public static string ToCsv(System.Collections.Generic.IEnumerable<string> rows, string header) =>
-        header + Environment.NewLine + string.Join(Environment.NewLine, rows) + Environment.NewLine;
 }

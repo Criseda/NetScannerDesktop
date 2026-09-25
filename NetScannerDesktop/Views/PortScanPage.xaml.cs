@@ -5,7 +5,6 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
 using NetScannerDesktop.Models;
 using NetScannerDesktop.ViewModels;
-using Windows.ApplicationModel.DataTransfer;
 
 namespace NetScannerDesktop.Views;
 
@@ -28,7 +27,13 @@ public sealed partial class PortScanPage : Page, IResponsivePage
         ViewModel.SaveFileAsync = PageHelpers.SaveFileAsync;
 
         // Page is cached; keep the badge live while a scan runs in the background.
-        ViewModel.OpenPorts.CollectionChanged += (_, _) => UpdateBadge();
+        ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(PortScanViewModel.PortCount))
+            {
+                UpdateBadge();
+            }
+        };
 
         foreach (PortRangePreset preset in PortScanViewModel.Presets)
         {
@@ -55,7 +60,7 @@ public sealed partial class PortScanPage : Page, IResponsivePage
         UpdateBadge();
     }
 
-    private void UpdateBadge() => PageHelpers.Shell?.SetPortBadge(ViewModel.OpenPorts.Count);
+    private void UpdateBadge() => PageHelpers.Shell?.SetPortBadge(ViewModel.PortCount);
 
     // Host box -----------------------------------------------------------------
 
@@ -158,13 +163,7 @@ public sealed partial class PortScanPage : Page, IResponsivePage
     private async void Open(string scheme, int port) =>
         await Windows.System.Launcher.LaunchUriAsync(new Uri($"{scheme}://{Host}:{port}"));
 
-    private void CopyText(string text)
-    {
-        var package = new DataPackage();
-        package.SetText(text);
-        Clipboard.SetContent(package);
-        ViewModel.StatusText = $"Copied {text} to the clipboard.";
-    }
+    private void CopyText(string text) => ViewModel.CopyToClipboard(text, $"Copied {text} to the clipboard.");
 
     // Keyboard -----------------------------------------------------------------
 

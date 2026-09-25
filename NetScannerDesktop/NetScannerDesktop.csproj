@@ -69,7 +69,25 @@
 	<PropertyGroup>
 		<PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
 		<PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
-		<PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
-		<PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
+		<!--
+			No trimming: it strips the CsWinRT COM vtables for collections the
+			XAML binds to (e.g. ObservableCollection<HostResult>), and the
+			published app crashes on the first page even with TrimMode=partial.
+			Revisit together with a CsWinRT AOT-compatibility pass.
+		-->
+		<PublishTrimmed>False</PublishTrimmed>
 	</PropertyGroup>
+
+	<!--
+		Unpackaged publish (Properties/PublishProfiles) leaves out the compiled
+		XAML (.xbf) and the resource index (.pri), so the published exe dies
+		loading MainWindow. The MSIX package project collects them itself;
+		copy them for the plain publish folder too.
+	-->
+	<Target Name="PublishXamlResources" AfterTargets="Publish">
+		<ItemGroup>
+			<_XamlPublishResource Include="$(OutDir)*.pri;$(OutDir)**\*.xbf" />
+		</ItemGroup>
+		<Copy SourceFiles="@(_XamlPublishResource)" DestinationFiles="@(_XamlPublishResource->'$(PublishDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+	</Target>
 </Project>

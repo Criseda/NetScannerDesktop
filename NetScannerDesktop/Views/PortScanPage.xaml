@@ -200,7 +200,7 @@
                             x:Name="PortsList"
                             Grid.Row="2"
                             MinHeight="240"
-                            ItemsSource="{x:Bind ViewModel.FilteredPorts, Mode=OneWay}"
+                            ItemsSource="{x:Bind ViewModel.VisiblePorts}"
                             SelectionMode="Single"
                             DoubleTapped="PortsList_DoubleTapped"
                             AutomationProperties.Name="Open ports">

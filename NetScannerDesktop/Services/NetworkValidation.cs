@@ -1,5 +1,5 @@
 using System;
-using System.Net;
+using System.Linq;
 
 namespace NetScannerDesktop.Services;
 
@@ -9,9 +9,18 @@ namespace NetScannerDesktop.Services;
 /// </summary>
 public static class NetworkValidation
 {
-    public static bool IsValidIpv4(string? text) =>
-        IPAddress.TryParse(text?.Trim(), out IPAddress? address) &&
-        address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork;
+    /// <summary>
+    /// Strict dotted quad, the only form the engine accepts. IPAddress.TryParse
+    /// alone is too lenient: it takes legacy shorthand ("192.168.1" means
+    /// 192.168.0.1) and hex/octal octets, which ns rejects after the form
+    /// already said they were fine.
+    /// </summary>
+    public static bool IsValidIpv4(string? text)
+    {
+        string[] octets = (text ?? string.Empty).Trim().Split('.');
+        return octets.Length == 4 && octets.All(o =>
+            o.Length is >= 1 and <= 3 && o.All(char.IsAsciiDigit) && int.Parse(o) <= 255);
+    }
 
     public static bool TryParseCidr(string? text, out string error)
     {

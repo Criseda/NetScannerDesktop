@@ -6,11 +6,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using NetScannerDesktop.Models;
 using NetScannerDesktop.Services;
-using Windows.ApplicationModel.DataTransfer;
 
 namespace NetScannerDesktop.ViewModels;
 
@@ -19,12 +17,11 @@ namespace NetScannerDesktop.ViewModels;
 /// Progress&lt;T&gt; callbacks are created on the UI thread so results can
 /// update the lists directly without dispatcher calls.
 /// </summary>
-public sealed partial class DiscoveryViewModel : ObservableObject
+public sealed partial class DiscoveryViewModel : ScanViewModelBase
 {
-    private readonly INetScannerService scanner;
-    private readonly EngineLog log = new();
     private readonly List<LocalSubnet> localSubnets = new();
-    private CancellationTokenSource? runningScan;
+    private readonly Dictionary<string, HostResult> hostsByIp = new();
+    private readonly FilteredSortedView<HostResult> hostView = new(ByIp);
 
     /// <summary>True once a scan has finished (or been cancelled) this session.</summary>
     private bool hasScanned;
@@ -35,136 +32,110 @@ public sealed partial class DiscoveryViewModel : ObservableObject
     /// <summary>Above this the engine would spawn an unreasonable number of probes.</summary>
     public const long MaxScanHostsAllowed = 65534; // /16 usable
 
-    /// <summary>Set by the view: (suggestedName, extension, content) -> saved path or null.</summary>
-    public Func<string, string, string, Task<string?>>? SaveFileAsync { get; set; }
-
-    /// <summary>Set by the view to show a ContentDialog for large scans.</summary>
-    public Func<string, Task<bool>>? ConfirmLargeScanAsync { get; set; }
-
     public DiscoveryViewModel() : this(new NetScannerService())
     {
     }
 
-    public DiscoveryViewModel(INetScannerService scanner)
+    public DiscoveryViewModel(INetScannerService scanner) : base(scanner)
     {
-        this.scanner = scanner;
-
-        // Titles and empty-state hints follow the list automatically.
-        Hosts.CollectionChanged += (_, _) =>
-        {
-            OnPropertyChanged(nameof(HostCountTitle));
-            OnPropertyChanged(nameof(FilteredHosts));
-            NotifyEmptyStateChanged();
-        };
+        StatusText = "Enter a subnet to start.";
+        VisibleHosts.CollectionChanged += (_, _) => NotifyEmptyStateChanged();
 
         ScanHistoryService.HistoryUpdated += (ip, history) =>
         {
-            var target = Hosts.FirstOrDefault(h => string.Equals(h.IpAddress, ip, StringComparison.OrdinalIgnoreCase));
-            target?.UpdateScannedPorts(history.SummaryText);
+            if (hostsByIp.TryGetValue(ip, out HostResult? host))
+            {
+                host.UpdateScannedPorts(history.SummaryText);
+            }
         };
 
         ScanHistoryService.HistoryCleared += () =>
         {
             UpdateSuggestions(string.Empty);
-            foreach (var h in Hosts)
+            foreach (HostResult host in Hosts)
             {
-                h.UpdateScannedPorts(null);
+                host.UpdateScannedPorts(null);
             }
         };
     }
 
-    // Form -----------------------------------------------------------------
+    // Results ----------------------------------------------------------------
 
-    [ObservableProperty]
-    private string subnet = string.Empty;
+    /// <summary>Every host found by the last scan, in arrival order.</summary>
+    public IReadOnlyList<HostResult> Hosts => hostView.Source;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(MethodIndex))]
-    private bool usePingFallback;
+    /// <summary>Hosts matching the filter, in the chosen order. Bind the list to this.</summary>
+    public ObservableCollection<HostResult> VisibleHosts => hostView.View;
 
-    /// <summary>RadioButtons index: 0 = TCP + ARP, 1 = ICMP ping.</summary>
-    public int MethodIndex
+    public int HostCount => Hosts.Count;
+
+    public string HostCountTitle => HostCount == 1 ? "1 host" : $"{HostCount:N0} hosts";
+
+    private void AddHost(HostResult host)
     {
-        get => UsePingFallback ? 1 : 0;
-        set => UsePingFallback = value == 1;
+        if (!hostsByIp.TryAdd(host.IpAddress, host))
+        {
+            return;
+        }
+
+        if (ScanHistoryService.TryGet(host.IpAddress, out var history) && history != null)
+        {
+            host.UpdateScannedPorts(history.SummaryText);
+        }
+
+        hostView.Add(host);
+        OnPropertyChanged(nameof(HostCount));
+        OnPropertyChanged(nameof(HostCountTitle));
     }
 
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(UpdateEngineCommand))]
-    private bool isScanning;
-
-    [ObservableProperty]
-    private string statusText = string.Empty;
-
-    [ObservableProperty]
-    private string logText = string.Empty;
-
-    [ObservableProperty]
-    private string engineVersion = "…";
-
-    [ObservableProperty]
-    private bool isNoticeOpen;
-
-    [ObservableProperty]
-    private string noticeText = string.Empty;
-
-    [ObservableProperty]
-    private InfoBarSeverity noticeSeverity = InfoBarSeverity.Informational;
-
-    /// <summary>First-run guidance banner. Dismissed permanently via <see cref="DismissFirstRunTip"/>.</summary>
-    [ObservableProperty]
-    private bool isFirstRunTipOpen;
-
-    public void DismissFirstRunTip()
+    private void ClearHosts()
     {
-        IsFirstRunTipOpen = false;
-        AppSettings.SetBool(AppSettings.SeenTeachingTip, true);
+        hostsByIp.Clear();
+        hostView.Clear();
+        OnPropertyChanged(nameof(HostCount));
+        OnPropertyChanged(nameof(HostCountTitle));
     }
-
-    public ObservableCollection<HostResult> Hosts { get; } = new();
-
-    /// <summary>Subnet box suggestions: this machine's networks, then recent scans.</summary>
-    public ObservableCollection<SubnetSuggestion> SubnetSuggestions { get; } = new();
-
-    public string HostCountTitle => Hosts.Count == 1 ? "1 host" : $"{Hosts.Count:N0} hosts";
 
     [ObservableProperty]
     private string filterText = string.Empty;
 
-    partial void OnFilterTextChanged(string value) => OnPropertyChanged(nameof(FilteredHosts));
+    partial void OnFilterTextChanged(string value)
+    {
+        string f = value.Trim();
+        hostView.SetFilter(f.Length == 0 ? _ => true : h => h.Matches(f));
+    }
 
     /// <summary>0 = by IP address, 1 = by name, 2 = by time found.</summary>
     [ObservableProperty]
     private int sortIndex;
 
-    partial void OnSortIndexChanged(int value) => OnPropertyChanged(nameof(FilteredHosts));
-
-    public IEnumerable<HostResult> FilteredHosts
+    partial void OnSortIndexChanged(int value) => hostView.SetComparer(value switch
     {
-        get
+        1 => ByName,
+        2 => ByTimeFound,
+        _ => ByIp,
+    });
+
+    private static readonly IComparer<HostResult> ByIp =
+        Comparer<HostResult>.Create((a, b) => IpToSortKey(a.IpAddress).CompareTo(IpToSortKey(b.IpAddress)));
+
+    /// <summary>Named devices first (alphabetically), then the rest by IP.</summary>
+    private static readonly IComparer<HostResult> ByName = Comparer<HostResult>.Create((a, b) =>
+    {
+        int named = (a.Hostname is null).CompareTo(b.Hostname is null);
+        if (named != 0)
         {
-            IEnumerable<HostResult> query = Hosts;
-
-            if (!string.IsNullOrWhiteSpace(FilterText))
-            {
-                string f = FilterText.Trim();
-                query = query.Where(h => h.Matches(f));
-            }
-
-            query = SortIndex switch
-            {
-                // Named devices first (alphabetically), then the rest by IP.
-                1 => query.OrderBy(h => h.Hostname is null).ThenBy(h => h.Hostname, StringComparer.OrdinalIgnoreCase)
-                          .ThenBy(h => IpToSortKey(h.IpAddress)),
-                2 => query.OrderBy(h => h.FoundAt),
-                _ => query.OrderBy(h => IpToSortKey(h.IpAddress)),
-            };
-
-            return query.ToList();
+            return named;
         }
-    }
 
-    private static uint IpToSortKey(string ip)
+        int byName = StringComparer.OrdinalIgnoreCase.Compare(a.Hostname, b.Hostname);
+        return byName != 0 ? byName : ByIp.Compare(a, b);
+    });
+
+    private static readonly IComparer<HostResult> ByTimeFound =
+        Comparer<HostResult>.Create((a, b) => a.FoundAt.CompareTo(b.FoundAt));
+
+    internal static uint IpToSortKey(string ip)
     {
         string[] parts = ip.Split('.');
         if (parts.Length != 4)
@@ -186,18 +157,20 @@ public sealed partial class DiscoveryViewModel : ObservableObject
         return key;
     }
 
-    public string HostEstimateText
-    {
-        get
-        {
-            if (!NetworkValidation.TryParseCidr(Subnet, out _))
-            {
-                return "CIDR notation, for example 192.168.1.0/24.";
-            }
+    // Form -----------------------------------------------------------------
 
-            long n = NetworkValidation.CountUsableHosts(Subnet.Trim());
-            return $"{n:N0} {(n == 1 ? "host" : "hosts")} will be probed.";
-        }
+    [ObservableProperty]
+    private string subnet = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MethodIndex))]
+    private bool usePingFallback;
+
+    /// <summary>RadioButtons index: 0 = TCP + ARP, 1 = ICMP ping.</summary>
+    public int MethodIndex
+    {
+        get => UsePingFallback ? 1 : 0;
+        set => UsePingFallback = value == 1;
     }
 
     partial void OnUsePingFallbackChanged(bool value) => AppSettings.SetBool(AppSettings.DiscoveryUsePing, value);
@@ -212,24 +185,54 @@ public sealed partial class DiscoveryViewModel : ObservableObject
     [ObservableProperty]
     private bool canIdentifyDevices = true;
 
+    [ObservableProperty]
+    private string engineVersion = "…";
+
+    /// <summary>First-run guidance banner. Dismissed permanently via <see cref="DismissFirstRunTip"/>.</summary>
+    [ObservableProperty]
+    private bool isFirstRunTipOpen;
+
+    public void DismissFirstRunTip()
+    {
+        IsFirstRunTipOpen = false;
+        AppSettings.SetBool(AppSettings.SeenTeachingTip, true);
+    }
+
+    /// <summary>Subnet box suggestions: this machine's networks, then recent scans.</summary>
+    public ObservableCollection<SubnetSuggestion> SubnetSuggestions { get; } = new();
+
+    public string HostEstimateText
+    {
+        get
+        {
+            if (!NetworkValidation.TryParseCidr(Subnet, out _))
+            {
+                return "CIDR notation, for example 192.168.1.0/24.";
+            }
+
+            long n = NetworkValidation.CountUsableHosts(Subnet.Trim());
+            return $"{n:N0} {(n == 1 ? "host" : "hosts")} will be probed.";
+        }
+    }
+
     // Empty state ------------------------------------------------------------
 
-    /// <summary>Show the empty-state hint only when idle with no results.</summary>
-    public bool ShowEmptyState => !IsScanning && Hosts.Count == 0;
+    /// <summary>Shown when idle and the list is empty: nothing yet, nothing found, or nothing matching.</summary>
+    public bool ShowEmptyState => !IsScanning && VisibleHosts.Count == 0;
 
-    public string EmptyStateGlyph => hasScanned ? "" : "";
+    private bool IsFilteredOut => HostCount > 0;
 
-    public string EmptyStateTitle => hasScanned ? "No hosts found" : "Ready to discover hosts";
+    public string EmptyStateGlyph => IsFilteredOut ? "" : hasScanned ? "" : "";
 
-    public string EmptyStateMessage => hasScanned
-        ? "Nothing answered on this subnet. Check the subnet, or try the ICMP ping method."
-        : "Pick or enter a subnet and press Scan to find live devices on your network.";
+    public string EmptyStateTitle => IsFilteredOut ? "No matching hosts"
+        : hasScanned ? "No hosts found"
+        : "Ready to discover hosts";
 
-    partial void OnIsScanningChanged(bool value)
-    {
-        ScanCommand.NotifyCanExecuteChanged();
-        NotifyEmptyStateChanged();
-    }
+    public string EmptyStateMessage => IsFilteredOut
+        ? $"None of the {HostCountTitle} match “{FilterText.Trim()}”."
+        : hasScanned
+            ? "Nothing answered on this subnet. Check the subnet, or try the ICMP ping method."
+            : "Pick or enter a subnet and press Scan to find live devices on your network.";
 
     private void NotifyEmptyStateChanged()
     {
@@ -237,6 +240,13 @@ public sealed partial class DiscoveryViewModel : ObservableObject
         OnPropertyChanged(nameof(EmptyStateGlyph));
         OnPropertyChanged(nameof(EmptyStateTitle));
         OnPropertyChanged(nameof(EmptyStateMessage));
+    }
+
+    protected override void OnScanStateChanged()
+    {
+        ScanCommand.NotifyCanExecuteChanged();
+        UpdateEngineCommand.NotifyCanExecuteChanged();
+        NotifyEmptyStateChanged();
     }
 
     // Validation -------------------------------------------------------------
@@ -267,9 +277,6 @@ public sealed partial class DiscoveryViewModel : ObservableObject
         && !HasSubnetError
         && !IsEngineMissing;
 
-    [ObservableProperty]
-    private bool isEngineMissing;
-
     partial void OnSubnetChanged(string value)
     {
         ScanCommand.NotifyCanExecuteChanged();
@@ -285,8 +292,6 @@ public sealed partial class DiscoveryViewModel : ObservableObject
     private string IdleStatus() => string.IsNullOrWhiteSpace(Subnet)
         ? "Enter a subnet to start."
         : "Ready. Press Scan or F5.";
-
-    partial void OnIsEngineMissingChanged(bool value) => ScanCommand.NotifyCanExecuteChanged();
 
     // Suggestions ------------------------------------------------------------
 
@@ -349,19 +354,14 @@ public sealed partial class DiscoveryViewModel : ObservableObject
 
         StatusText = IdleStatus();
 
-        try
-        {
-            EngineVersion = await scanner.GetVersionAsync(CancellationToken.None);
-            IsEngineMissing = false;
-            CanIdentifyDevices = (await scanner.GetCapabilitiesAsync(CancellationToken.None)).Resolve;
-        }
-        catch (Exception ex)
+        if (await ProbeEngineAsync() is not { } version)
         {
             EngineVersion = "missing";
-            IsEngineMissing = true;
-            ShowNotice($"Engine not found: {ex.Message}", InfoBarSeverity.Error);
             return;
         }
+
+        EngineVersion = version;
+        CanIdentifyDevices = (await Scanner.GetCapabilitiesAsync(CancellationToken.None)).Resolve;
 
         // Fire-and-forget: a slow/offline network must never block startup.
         _ = CheckEngineUpdateAsync();
@@ -372,7 +372,7 @@ public sealed partial class DiscoveryViewModel : ObservableObject
     /// </summary>
     public void RefreshHistoryForHosts()
     {
-        foreach (var host in Hosts)
+        foreach (HostResult host in Hosts)
         {
             host.UpdateScannedPorts(
                 ScanHistoryService.TryGet(host.IpAddress, out var history) ? history?.SummaryText : null);
@@ -380,10 +380,6 @@ public sealed partial class DiscoveryViewModel : ObservableObject
     }
 
     // Engine update ----------------------------------------------------------
-
-    /// <summary>Latest release seen by the last check (empty = unknown).</summary>
-    [ObservableProperty]
-    private string latestEngineVersion = string.Empty;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(UpdateEngineCommand))]
@@ -407,22 +403,16 @@ public sealed partial class DiscoveryViewModel : ObservableObject
     {
         // Null when offline or on an API hiccup: stay silent, keep the current engine.
         EngineRelease? latest = await EngineUpdater.GetLatestReleaseAsync();
-        if (latest is null)
-        {
-            return;
-        }
-
-        LatestEngineVersion = latest.Tag;
 
         // Only offer what UpdateAsync will accept: same major version and a
         // published checksum. Anything else arrives with an app update.
-        if (EngineUpdater.IsNewerThan(latest.Tag, EngineVersion) &&
+        if (latest is not null &&
+            EngineUpdater.IsNewerThan(latest.Tag, EngineVersion) &&
             EngineUpdater.IsCompatible(latest.Tag) &&
             latest.Sha256 is not null)
         {
             pendingRelease = latest;
-            UpdateAvailableText =
-                $"ns {latest.Tag} is available (you have {EngineVersion}).";
+            UpdateAvailableText = $"ns {latest.Tag} is available (you have {EngineVersion}).";
             IsUpdateAvailable = true;
         }
     }
@@ -437,28 +427,27 @@ public sealed partial class DiscoveryViewModel : ObservableObject
 
         IsUpdating = true;
         StatusText = $"Updating engine to {pendingRelease.Tag}…";
-        var logProgress = new Progress<string>(AppendLogLine);
 
         try
         {
             string installed = await EngineUpdater.UpdateAsync(
-                pendingRelease, logProgress, CancellationToken.None);
-            FlushLog();
+                pendingRelease, new Progress<string>(AppendLogLine), CancellationToken.None);
 
             EngineVersion = installed;
             IsEngineMissing = false;
             IsUpdateAvailable = false;
             pendingRelease = null;
+            CanIdentifyDevices = (await Scanner.GetCapabilitiesAsync(CancellationToken.None)).Resolve;
             StatusText = $"Engine updated to ns {installed}.";
         }
         catch (Exception ex)
         {
-            FlushLog();
             ShowNotice($"Engine update failed: {ex.Message}", InfoBarSeverity.Error);
             StatusText = "Engine update failed.";
         }
         finally
         {
+            FlushLog();
             IsUpdating = false;
         }
     }
@@ -474,188 +463,84 @@ public sealed partial class DiscoveryViewModel : ObservableObject
             return;
         }
 
-        long hostCount = NetworkValidation.CountUsableHosts(Subnet.Trim());
-        if (hostCount > MaxScanHostsAllowed)
+        string target = Subnet.Trim();
+        long hostCount = NetworkValidation.CountUsableHosts(target);
+        if (hostCount > LargeScanConfirmThreshold && ConfirmLargeScanAsync is not null &&
+            !await ConfirmLargeScanAsync($"This will probe {hostCount:N0} hosts and may take a while. Continue?"))
         {
-            ShowNotice(
-                $"That subnet has {hostCount:N0} hosts — too large. Use /16 or smaller (max {MaxScanHostsAllowed:N0} hosts).",
-                InfoBarSeverity.Warning);
+            StatusText = "Large scan not started.";
             return;
         }
 
-        if (hostCount > LargeScanConfirmThreshold && ConfirmLargeScanAsync is not null)
-        {
-            bool ok = await ConfirmLargeScanAsync(
-                $"This will probe {hostCount:N0} hosts and may take a while. Continue?");
-            if (!ok)
-            {
-                StatusText = "Large scan not started.";
-                return;
-            }
-        }
-
-        HideNotice();
-        Hosts.Clear();
-        log.Clear();
-        LogText = string.Empty;
-        OnPropertyChanged(nameof(LogLineCountText));
-
-        string trimmedSubnet = Subnet.Trim();
-        AppSettings.SetString(AppSettings.DiscoverySubnet, trimmedSubnet);
-        AppSettings.PushRecent(AppSettings.DiscoveryRecent, trimmedSubnet);
+        ClearHosts();
+        AppSettings.SetString(AppSettings.DiscoverySubnet, target);
+        AppSettings.PushRecent(AppSettings.DiscoveryRecent, target);
         UpdateSuggestions(string.Empty);
 
-        IsScanning = true;
-        runningScan = new CancellationTokenSource();
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        void ShowProgress() =>
-            StatusText = $"Scanning {trimmedSubnet} • {FormatElapsed(stopwatch.Elapsed)} • {HostCountTitle} found…";
-
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
-        timer.Tick += (_, _) => ShowProgress();
-        timer.Start();
-        ShowProgress();
+        var options = new SubnetScanOptions(UsePingFallback, IdentifyDevices && CanIdentifyDevices);
 
         // Created here on the UI thread: callbacks arrive on the UI thread.
         var hostProgress = new Progress<HostResult>(host =>
         {
-            if (ScanHistoryService.TryGet(host.IpAddress, out var history) && history != null)
-            {
-                host.UpdateScannedPorts(history.SummaryText);
-            }
-
-            Hosts.Add(host);
-            ShowProgress();
+            AddHost(host);
+            RefreshProgress();
         });
         var detailProgress = new Progress<HostDetail>(detail =>
         {
-            Hosts.FirstOrDefault(h => h.IpAddress == detail.IpAddress)?.ApplyDetail(detail);
+            if (hostsByIp.TryGetValue(detail.IpAddress, out HostResult? host))
+            {
+                host.ApplyDetail(detail);
+            }
         });
-        var logProgress = new Progress<string>(AppendLogLine);
-        var options = new SubnetScanOptions(UsePingFallback, IdentifyDevices && CanIdentifyDevices);
 
-        try
-        {
-            SubnetScanResult result = await scanner.ScanSubnetAsync(
-                trimmedSubnet, options, hostProgress, detailProgress, logProgress, runningScan.Token);
+        await RunScanAsync(
+            elapsed => $"Scanning {target} • {FormatElapsed(elapsed)} • {HostCountTitle} found…",
+            async (token, stopwatch) =>
+            {
+                SubnetScanResult result = await Scanner.ScanSubnetAsync(
+                    target, options, hostProgress, detailProgress, new Progress<string>(AppendLogLine), token);
 
-            FlushLog();
-            string total = FormatElapsed(stopwatch.Elapsed);
-            StatusText = result.Hosts.Count == 0
-                ? $"No hosts found on {trimmedSubnet} ({total})."
-                : $"{HostCountTitle} found on {trimmedSubnet} in {total}.";
-        }
-        catch (OperationCanceledException)
-        {
-            FlushLog();
-            StatusText = $"Cancelled after {FormatElapsed(stopwatch.Elapsed)} — {HostCountTitle} found.";
-        }
-        catch (Exception ex)
-        {
-            FlushLog();
-            ShowNotice(ex.Message, InfoBarSeverity.Error);
-            StatusText = "Scan failed.";
-        }
-        finally
-        {
-            timer.Stop();
-            runningScan?.Dispose();
-            runningScan = null;
-            hasScanned = true;
-            IsScanning = false;
+                string total = FormatElapsed(stopwatch.Elapsed);
+                StatusText = result.Hosts.Count == 0
+                    ? $"No hosts found on {target} ({total})."
+                    : $"{HostCountTitle} found on {target} in {total}.";
+            },
+            elapsed => $"Cancelled after {FormatElapsed(elapsed)} — {HostCountTitle} found.");
 
-            // Names arrive after the sweep; re-sort/filter with them.
-            OnPropertyChanged(nameof(FilteredHosts));
-        }
-    }
+        hasScanned = true;
 
-    private static string FormatElapsed(TimeSpan elapsed) => elapsed.TotalMinutes >= 1
-        ? $"{(int)elapsed.TotalMinutes}m {elapsed.Seconds:D2}s"
-        : $"{elapsed.TotalSeconds:F1}s";
-
-    [RelayCommand]
-    private void Cancel()
-    {
-        runningScan?.Cancel();
+        // Names arrive after the sweep; filter and "Sort by name" need them.
+        hostView.Refresh();
+        NotifyEmptyStateChanged();
     }
 
     [RelayCommand]
     private void CopyResults()
     {
-        if (Hosts.Count == 0)
+        if (VisibleHosts.Count > 0)
         {
-            return;
+            CopyToClipboard(string.Join(Environment.NewLine, VisibleHosts.Select(h => h.IpAddress)),
+                $"Copied {VisibleHosts.Count:N0} IP addresses to the clipboard.");
         }
-
-        var package = new DataPackage();
-        package.SetText(string.Join(Environment.NewLine, FilteredHosts.Select(h => h.IpAddress)));
-        Clipboard.SetContent(package);
-        StatusText = $"Copied {HostCountTitle} to the clipboard.";
     }
 
     [RelayCommand]
     private async Task ExportCsvAsync()
     {
-        if (Hosts.Count == 0)
+        if (VisibleHosts.Count == 0)
         {
             ShowNotice("Nothing to export yet — run a scan first.", InfoBarSeverity.Warning);
             return;
         }
 
-        string csv = FileSaver.ToCsv(
-            FilteredHosts.Select(h => new[]
+        string csv = Csv.Format(
+            VisibleHosts.Select(h => new[]
             {
                 h.IpAddress, h.Hostname ?? string.Empty, h.MacAddress ?? string.Empty, h.Vendor ?? string.Empty,
                 h.Source, h.FoundAt.ToString("s"), h.PortsSummary ?? string.Empty,
             }),
             new[] { "ip_address", "hostname", "mac_address", "vendor", "source", "found_at", "ports" });
 
-        string? path = SaveFileAsync is not null
-            ? await SaveFileAsync("hosts", ".csv", csv)
-            : await ResultExporter.SaveTextAsync("hosts", ".csv", csv);
-
-        StatusText = path is null ? "Export cancelled." : $"Saved {HostCountTitle} to {path}.";
+        await SaveCsvAsync("hosts", csv, $"{VisibleHosts.Count:N0} hosts");
     }
-
-    // Helpers -----------------------------------------------------------------
-
-    public string LogLineCountText => log.LineCountText;
-
-    private void AppendLogLine(string line)
-    {
-        if (log.Append(line))
-        {
-            LogText = log.Text;
-            OnPropertyChanged(nameof(LogLineCountText));
-        }
-    }
-
-    private void FlushLog()
-    {
-        LogText = log.Flush();
-        OnPropertyChanged(nameof(LogLineCountText));
-    }
-
-    [RelayCommand]
-    private void CopyLog()
-    {
-        if (string.IsNullOrEmpty(LogText))
-        {
-            return;
-        }
-
-        var package = new DataPackage();
-        package.SetText(LogText);
-        Clipboard.SetContent(package);
-        StatusText = $"Copied engine log ({LogLineCountText}) to the clipboard.";
-    }
-
-    private void ShowNotice(string text, InfoBarSeverity severity)
-    {
-        NoticeText = text;
-        NoticeSeverity = severity;
-        IsNoticeOpen = true;
-    }
-
-    private void HideNotice() => IsNoticeOpen = false;
 }

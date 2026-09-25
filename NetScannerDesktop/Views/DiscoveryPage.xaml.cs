@@ -7,7 +7,6 @@ using Microsoft.UI.Xaml.Navigation;
 using NetScannerDesktop.Models;
 using NetScannerDesktop.Services;
 using NetScannerDesktop.ViewModels;
-using Windows.ApplicationModel.DataTransfer;
 
 namespace NetScannerDesktop.Views;
 
@@ -34,7 +33,13 @@ public sealed partial class DiscoveryPage : Page, IResponsivePage
         // Subscribed for the page's lifetime (it is cached): a scan keeps
         // running while the user is on another page, and the badge is how
         // they see it progress.
-        ViewModel.Hosts.CollectionChanged += (_, _) => UpdateBadge();
+        ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(DiscoveryViewModel.HostCount))
+            {
+                UpdateBadge();
+            }
+        };
     }
 
     protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -45,7 +50,7 @@ public sealed partial class DiscoveryPage : Page, IResponsivePage
         UpdateBadge();
     }
 
-    private void UpdateBadge() => PageHelpers.Shell?.SetDiscoveryBadge(ViewModel.Hosts.Count);
+    private void UpdateBadge() => PageHelpers.Shell?.SetDiscoveryBadge(ViewModel.HostCount);
 
     private void FirstRunTipBar_Closed(InfoBar sender, InfoBarClosedEventArgs args) =>
         ViewModel.DismissFirstRunTip();
@@ -127,7 +132,7 @@ public sealed partial class DiscoveryPage : Page, IResponsivePage
     {
         if (HostFromTag(sender) is { } host)
         {
-            CopyText(host.IpAddress, $"Copied {host.IpAddress} to the clipboard.");
+            ViewModel.CopyToClipboard(host.IpAddress, $"Copied {host.IpAddress} to the clipboard.");
         }
     }
 
@@ -140,7 +145,7 @@ public sealed partial class DiscoveryPage : Page, IResponsivePage
                 host.IpAddress, host.DetailsLine, $"found via {host.Source} at {host.FoundAtShort}", host.PortsSummary,
             }.Where(s => !string.IsNullOrEmpty(s)));
 
-            CopyText(summary, $"Copied details for {host.IpAddress}.");
+            ViewModel.CopyToClipboard(summary, $"Copied details for {host.IpAddress}.");
         }
     }
 
@@ -158,14 +163,6 @@ public sealed partial class DiscoveryPage : Page, IResponsivePage
         {
             await Windows.System.Launcher.LaunchUriAsync(new Uri($"https://{host.IpAddress}"));
         }
-    }
-
-    private void CopyText(string text, string status)
-    {
-        var package = new DataPackage();
-        package.SetText(text);
-        Clipboard.SetContent(package);
-        ViewModel.StatusText = status;
     }
 
     // Keyboard -----------------------------------------------------------------

@@ -246,7 +246,7 @@
                             x:Name="HostsList"
                             Grid.Row="2"
                             MinHeight="240"
-                            ItemsSource="{x:Bind ViewModel.FilteredHosts, Mode=OneWay}"
+                            ItemsSource="{x:Bind ViewModel.VisibleHosts}"
                             SelectionMode="Single"
                             DoubleTapped="HostsList_DoubleTapped"
                             AutomationProperties.Name="Discovered hosts">

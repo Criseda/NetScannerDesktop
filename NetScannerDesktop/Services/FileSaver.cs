@@ -29,7 +29,7 @@ public static class FileSaver
                 InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(window));
                 picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
                 picker.SuggestedFileName = $"{suggestedName}-{DateTime.Now:yyyy-MM-dd-HHmmss}";
-                picker.FileTypeChoices.Add("CSV", new List<string> { extension });
+                picker.FileTypeChoices.Add("CSV (comma-separated values)", new List<string> { extension });
                 picker.DefaultFileExtension = extension;
 
                 Windows.Storage.StorageFile? file = await picker.PickSaveFileAsync();
@@ -48,22 +48,5 @@ public static class FileSaver
         }
 
         return await ResultExporter.SaveTextAsync(suggestedName, extension, content);
-    }
-
-    public static string ToCsv(IEnumerable<string[]> rows, string[] header) =>
-        ToCsvLine(header) + Environment.NewLine +
-        string.Join(Environment.NewLine, rows.Select(ToCsvLine)) + Environment.NewLine;
-
-    private static string ToCsvLine(string[] fields) =>
-        string.Join(",", fields.Select(Escape));
-
-    private static string Escape(string field)
-    {
-        if (field.Contains('"') || field.Contains(',') || field.Contains('\n') || field.Contains('\r'))
-        {
-            return "\"" + field.Replace("\"", "\"\"") + "\"";
-        }
-
-        return field;
     }
 }
