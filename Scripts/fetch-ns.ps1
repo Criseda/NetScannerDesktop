@@ -3,20 +3,20 @@
 # Why this script exists:
 # NetScannerDesktop is only a frontend. The real scanning lives in the
 # Zig project Criseda/NetScanner. Instead of committing ns.exe to git
-# (it goes stale, see old Tools/ns.exe v0.3.0 vs current v1.1.0), we
+# (it went stale: the old Tools/ns.exe was stuck on v0.3.0), we
 # download the matching release binary at build time.
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File Scripts/fetch-ns.ps1
-#   powershell -File Scripts/fetch-ns.ps1 -Version v1.1.0 -Force
+#   powershell -File Scripts/fetch-ns.ps1 -Version v1.2.2 -Force
 #
 # Output:
 #   NetScannerDesktop/Assets/Tools/ns.exe (gitignored, copied to build output)
 
 param(
-    # NetScanner release tag to download. Keep in sync with
-    # <NetScannerVersion> in NetScannerDesktop.csproj.
-    [string]$Version = "v1.1.0",
+    # NetScanner release tag to download. Defaults to <NetScannerVersion>
+    # in NetScannerDesktop.csproj, the single place the version is pinned.
+    [string]$Version,
 
     # Where ns.exe should land. Defaults to the in-project Assets folder
     # so MSBuild can pick it up as Content.
@@ -28,6 +28,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+if (-not $Version) {
+    $csproj = Join-Path $PSScriptRoot "..\NetScannerDesktop\NetScannerDesktop.csproj"
+    $Version = ([xml](Get-Content $csproj)).Project.PropertyGroup.NetScannerVersion | Where-Object { $_ } | Select-Object -First 1
+    if (-not $Version) { throw "No <NetScannerVersion> found in $csproj." }
+}
+
 # Single Windows asset published by NetScanner releases.
 # Example: https://github.com/Criseda/NetScanner/releases/download/v1.0.0/windows.zip
 $DownloadUrl = "https://github.com/Criseda/NetScanner/releases/download/$Version/windows.zip"
@@ -37,6 +43,7 @@ $DownloadUrl = "https://github.com/Criseda/NetScanner/releases/download/$Version
 $ExpectedSha256ByVersion = @{
     "v1.0.0" = "ecbc843dcc37942bf1b28ecaa111b7e6c120aee840899a8ea0077344dfc74263"
     "v1.1.0" = "d6e778bff05fb5c7db55313488a5df3fe3b56105e2e8daab4070f29f5a092c84"
+    "v1.2.2" = "0b843db6e39f24849b6ef47302f7877ccd396022fab500378156445ba716b264"
 }
 
 $ExePath = Join-Path $OutputDir "ns.exe"
@@ -76,16 +83,29 @@ New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 try {
     $zipPath = Join-Path $tempDir "windows.zip"
     Write-Host "Downloading NetScanner $Version from $DownloadUrl ..."
-    Invoke-WebRequest -Uri $DownloadUrl -OutFile $zipPath
+    # Plain .NET instead of Invoke-WebRequest / Get-FileHash / Expand-Archive:
+    # when MSBuild runs from a PowerShell 7 terminal, the Windows PowerShell
+    # that runs this script inherits pwsh's PSModulePath and cannot
+    # autoload those cmdlets' modules.
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+    (New-Object System.Net.WebClient).DownloadFile($DownloadUrl, $zipPath)
 
-    $actualHash = (Get-FileHash -Path $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($zipPath)
+    try {
+        $actualHash = ([System.BitConverter]::ToString($sha.ComputeHash($stream)) -replace '-', '').ToLowerInvariant()
+    } finally {
+        $stream.Dispose()
+        $sha.Dispose()
+    }
     $expectedHash = $ExpectedSha256ByVersion[$Version].ToLowerInvariant()
     if ($actualHash -ne $expectedHash) {
         throw "SHA-256 mismatch for windows.zip. Expected $expectedHash, got $actualHash."
     }
     Write-Host "Checksum OK."
 
-    Expand-Archive -Path $zipPath -DestinationPath $tempDir -Force
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, (Join-Path $tempDir "out"))
 
     # The zip contains ns.exe at its root. Fail loudly if the layout changes.
     $downloadedExe = Get-ChildItem -Path $tempDir -Recurse -Filter "ns.exe" | Select-Object -First 1

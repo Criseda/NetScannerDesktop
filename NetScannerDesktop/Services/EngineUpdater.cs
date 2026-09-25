@@ -2,7 +2,9 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Net.Http;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
@@ -28,8 +30,10 @@ public sealed record EngineRelease(string Tag, string WindowsZipUrl, string? Sha
 /// </summary>
 public static class EngineUpdater
 {
-    /// <summary>Bundled engine. Keep in sync with csproj NetScannerVersion.</summary>
-    public const string PinnedVersion = "v1.1.0";
+    /// <summary>Bundled engine version, from csproj NetScannerVersion (via AssemblyMetadata).</summary>
+    public static string PinnedVersion { get; } =
+        typeof(EngineUpdater).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "NetScannerVersion")?.Value ?? "v0.0.0";
 
     /// <summary>Written next to every installed ns.exe so resolving never has to spawn it.</summary>
     public const string VersionFileName = "ns.version.txt";

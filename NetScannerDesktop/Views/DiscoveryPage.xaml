@@ -126,19 +126,27 @@
                             <RadioButtons
                                 Header="Method"
                                 SelectedIndex="{x:Bind ViewModel.MethodIndex, Mode=TwoWay}">
-                                <RadioButton>
+                                <RadioButton AutomationProperties.Name="TCP + ARP" AutomationProperties.HelpText="Fast. Finds quiet hosts from the ARP table too.">
                                     <StackPanel>
                                         <TextBlock Text="TCP + ARP" />
                                         <TextBlock Text="Fast. Finds quiet hosts from the ARP table too." Style="{StaticResource HintTextStyle}" />
                                     </StackPanel>
                                 </RadioButton>
-                                <RadioButton>
+                                <RadioButton AutomationProperties.Name="ICMP ping" AutomationProperties.HelpText="Slower. For networks that filter TCP probes.">
                                     <StackPanel>
                                         <TextBlock Text="ICMP ping" />
                                         <TextBlock Text="Slower. For networks that filter TCP probes." Style="{StaticResource HintTextStyle}" />
                                     </StackPanel>
                                 </RadioButton>
                             </RadioButtons>
+
+                            <ToggleSwitch
+                                Header="Identify devices"
+                                IsOn="{x:Bind ViewModel.IdentifyDevices, Mode=TwoWay}"
+                                IsEnabled="{x:Bind ViewModel.CanIdentifyDevices, Mode=OneWay}"
+                                OnContent="Names and manufacturers"
+                                OffContent="Off"
+                                ToolTipService.ToolTip="Looks up hostnames (mDNS, NetBIOS, DNS), MAC addresses and manufacturers. Adds a moment after the sweep." />
 
                             <StackPanel Spacing="8">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
@@ -229,6 +237,7 @@
                                 SelectedIndex="{x:Bind ViewModel.SortIndex, Mode=TwoWay}"
                                 AutomationProperties.Name="Sort hosts">
                                 <ComboBoxItem Content="Sort by IP" />
+                                <ComboBoxItem Content="Sort by name" />
                                 <ComboBoxItem Content="Sort by time found" />
                             </ComboBox>
                         </Grid>
@@ -243,7 +252,7 @@
                             AutomationProperties.Name="Discovered hosts">
                             <ListView.ItemTemplate>
                                 <DataTemplate x:DataType="models:HostResult">
-                                    <Grid ColumnSpacing="12" Padding="0,8" AutomationProperties.Name="{x:Bind IpAddress}">
+                                    <Grid ColumnSpacing="12" Padding="0,8" AutomationProperties.Name="{x:Bind DisplayName, Mode=OneWay}">
                                         <Grid.ContextFlyout>
                                             <MenuFlyout>
                                                 <MenuFlyoutItem Text="Scan ports" Tag="{x:Bind IpAddress}" Click="ScanPorts_Click">
@@ -275,9 +284,14 @@
                                             Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                         <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                                             <TextBlock
-                                                Text="{x:Bind IpAddress}"
+                                                Text="{x:Bind DisplayName, Mode=OneWay}"
                                                 Style="{StaticResource BodyStrongTextBlockStyle}"
-                                                IsTextSelectionEnabled="True"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                Text="{x:Bind SecondaryLine, Mode=OneWay}"
+                                                Visibility="{x:Bind HasSecondaryLine, Mode=OneWay}"
+                                                Style="{StaticResource HintTextStyle}"
+                                                TextWrapping="NoWrap"
                                                 TextTrimming="CharacterEllipsis" />
                                             <TextBlock
                                                 Text="{x:Bind PortsSummary, Mode=OneWay}"

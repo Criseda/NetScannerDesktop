@@ -207,6 +207,7 @@ public static class AppSettings
 
     public const string DiscoverySubnet = "discovery.subnet";
     public const string DiscoveryUsePing = "discovery.usePing";
+    public const string DiscoveryResolve = "discovery.resolve";
     public const string DiscoveryRecent = "discovery.recent";
 
     public const string PortIp = "ports.ip";

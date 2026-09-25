@@ -11,6 +11,11 @@ using NetScannerDesktop.Models;
 
 namespace NetScannerDesktop.Services;
 
+/// <summary>What to ask <c>ns -s</c> for.</summary>
+/// <param name="UsePing">ICMP ping sweep (<c>--ping</c>) instead of TCP + ARP.</param>
+/// <param name="Resolve">Hostnames, MACs and vendors (<c>--resolve</c>); ignored by engines without it.</param>
+public sealed record SubnetScanOptions(bool UsePing, bool Resolve);
+
 /// <summary>Outcome of <c>ns -s &lt;subnet&gt;</c>.</summary>
 public sealed record SubnetScanResult(
     List<HostResult> Hosts,
@@ -24,6 +29,15 @@ public sealed record PortScanResult(
     string RawLog,
     TimeSpan Elapsed);
 
+/// <summary>Optional engine features, read from <c>ns --help</c>.</summary>
+public sealed record EngineCapabilities(bool Json, bool Resolve)
+{
+    public static EngineCapabilities None { get; } = new(false, false);
+
+    public static EngineCapabilities FromHelp(string help) =>
+        new(help.Contains("--json", StringComparison.Ordinal), help.Contains("--resolve", StringComparison.Ordinal));
+}
+
 public interface INetScannerService
 {
     /// <summary>Where ns.exe will be launched from (or "ns" for PATH).</summary>
@@ -31,10 +45,14 @@ public interface INetScannerService
 
     Task<string> GetVersionAsync(CancellationToken cancellationToken);
 
+    /// <summary>Features of the engine <see cref="ResolveExePath"/> picks.</summary>
+    Task<EngineCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken);
+
     Task<SubnetScanResult> ScanSubnetAsync(
         string cidr,
-        bool usePingFallback,
+        SubnetScanOptions options,
         IProgress<HostResult>? hostFound,
+        IProgress<HostDetail>? detailFound,
         IProgress<string>? logLine,
         CancellationToken cancellationToken);
 
@@ -51,12 +69,15 @@ public interface INetScannerService
 /// <summary>
 /// Runs the ns engine as a child process and streams its output.
 /// The engine stays the single source of truth for scanning; this class
-/// only launches it, parses lines via <see cref="NetScannerParser"/>, and
-/// supports cancellation. One instance is shared by the whole app.
+/// only launches it, turns lines into events via
+/// <see cref="EngineOutputParser"/>, and supports cancellation. It asks
+/// for <c>--json</c> whenever the engine supports it, so scraping text is
+/// only the fallback for older engines.
 /// </summary>
 public sealed class NetScannerService : INetScannerService
 {
     private static readonly ConcurrentDictionary<(string Path, DateTime Written), string?> VersionCache = new();
+    private static readonly ConcurrentDictionary<(string Path, DateTime Written), EngineCapabilities> CapabilityCache = new();
 
     /// <summary>
     /// Picks the newest compatible engine among the bundled copy (MSBuild
@@ -128,7 +149,7 @@ public sealed class NetScannerService : INetScannerService
     public async Task<string> GetVersionAsync(CancellationToken cancellationToken)
     {
         var log = new StringBuilder();
-        int exit = await RunEngineAsync(["--version"], line => log.AppendLine(line), line => log.AppendLine(line), cancellationToken);
+        int exit = await RunEngineAsync(ResolveExePath(), ["--version"], line => log.AppendLine(line), line => log.AppendLine(line), cancellationToken);
         string version = log.ToString().Trim();
         if (exit != 0 || string.IsNullOrWhiteSpace(version))
         {
@@ -138,58 +159,99 @@ public sealed class NetScannerService : INetScannerService
         return version;
     }
 
+    public async Task<EngineCapabilities> GetCapabilitiesAsync(CancellationToken cancellationToken) =>
+        await GetCapabilitiesAsync(ResolveExePath(), cancellationToken);
+
+    private static async Task<EngineCapabilities> GetCapabilitiesAsync(string exePath, CancellationToken cancellationToken)
+    {
+        (string, DateTime) key = (exePath, File.Exists(exePath) ? File.GetLastWriteTimeUtc(exePath) : default);
+        if (CapabilityCache.TryGetValue(key, out EngineCapabilities? cached))
+        {
+            return cached;
+        }
+
+        var help = new StringBuilder();
+        try
+        {
+            await RunEngineAsync(exePath, ["--help"], line => help.AppendLine(line), _ => { }, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Missing or broken engine: scanning reports that properly.
+            return EngineCapabilities.None;
+        }
+
+        return CapabilityCache[key] = EngineCapabilities.FromHelp(help.ToString());
+    }
+
     public async Task<SubnetScanResult> ScanSubnetAsync(
         string cidr,
-        bool usePingFallback,
+        SubnetScanOptions options,
         IProgress<HostResult>? hostFound,
+        IProgress<HostDetail>? detailFound,
         IProgress<string>? logLine,
         CancellationToken cancellationToken)
     {
+        string exePath = ResolveExePath();
+        EngineCapabilities caps = await GetCapabilitiesAsync(exePath, cancellationToken);
+
+        var arguments = new List<string> { "-s", cidr };
+        if (options.UsePing)
+        {
+            arguments.Add("--ping");
+        }
+
+        if (options.Resolve && caps.Resolve)
+        {
+            arguments.Add("--resolve");
+        }
+
+        if (caps.Json)
+        {
+            arguments.Add("--json");
+        }
+
         var rawLog = new StringBuilder();
         var hosts = new List<HostResult>();
         ScanSummary? summary = null;
         string? engineError = null;
-        var started = DateTime.Now;
+        var started = Stopwatch.StartNew();
 
-        string[] arguments = usePingFallback
-            ? ["-s", cidr, "--ping"]
-            : ["-s", cidr];
+        var stdoutParser = new EngineOutputParser(caps.Json, options.UsePing ? "Ping" : "TCP");
+        var stderrParser = new EngineOutputParser(json: false);
 
-        void NoteError(string line)
+        void Handle(EngineEvent? e)
         {
-            if (NetScannerParser.IsEngineError(line))
+            switch (e)
             {
-                engineError ??= line.Trim();
+                case HostFoundEvent found:
+                    hosts.Add(found.Host);
+                    hostFound?.Report(found.Host);
+                    break;
+                case HostDetailEvent detail:
+                    detailFound?.Report(detail.Detail);
+                    break;
+                case SubnetSummaryEvent s:
+                    summary ??= s.Summary;
+                    break;
+                case EngineErrorEvent error:
+                    engineError ??= error.Message;
+                    break;
             }
         }
 
-        void OnStdout(string line)
-        {
-            rawLog.AppendLine(line);
-            logLine?.Report(line);
-            NoteError(line);
+        int exit = await RunEngineAsync(
+            exePath,
+            arguments,
+            line => { rawLog.AppendLine(line); logLine?.Report(line); Handle(stdoutParser.Parse(line)); },
+            // Diagnostics only; errors are still recognised by their prefix.
+            line => { rawLog.AppendLine(line); logLine?.Report(line); Handle(stderrParser.Parse(line) as EngineErrorEvent); },
+            cancellationToken);
 
-            HostResult? host = NetScannerParser.TryParseOnlineHost(line);
-            if (host is not null)
-            {
-                hosts.Add(host);
-                hostFound?.Report(host);
-                return;
-            }
-
-            summary ??= NetScannerParser.TryParseSummary(line);
-        }
-
-        // ns reports filtered ports and diagnostics on stderr; keep them in
-        // the log but never treat them as results.
-        void OnStderr(string line)
-        {
-            rawLog.AppendLine(line);
-            logLine?.Report(line);
-            NoteError(line);
-        }
-
-        int exit = await RunEngineAsync(arguments, OnStdout, OnStderr, cancellationToken);
         if (engineError is not null)
         {
             throw new InvalidOperationException(engineError);
@@ -200,7 +262,7 @@ public sealed class NetScannerService : INetScannerService
             throw new InvalidOperationException($"ns scan failed (exit {exit}): {TrimLogTail(rawLog.ToString())}");
         }
 
-        return new SubnetScanResult(hosts, summary, rawLog.ToString(), DateTime.Now - started);
+        return new SubnetScanResult(hosts, summary, rawLog.ToString(), started.Elapsed);
     }
 
     public async Task<PortScanResult> ScanPortsAsync(
@@ -212,9 +274,8 @@ public sealed class NetScannerService : INetScannerService
         CancellationToken cancellationToken,
         int? timeoutMs = null)
     {
-        var rawLog = new StringBuilder();
-        var openPorts = new List<int>();
-        var started = DateTime.Now;
+        string exePath = ResolveExePath();
+        EngineCapabilities caps = await GetCapabilitiesAsync(exePath, cancellationToken);
 
         var arguments = new List<string> { "-p", ipAddress, $"{startPort}-{endPort}" };
         if (timeoutMs.HasValue)
@@ -223,58 +284,69 @@ public sealed class NetScannerService : INetScannerService
             arguments.Add(timeoutMs.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
 
+        if (caps.Json)
+        {
+            arguments.Add("--json");
+        }
+
+        var rawLog = new StringBuilder();
+        var openPorts = new List<int>();
+        bool finished = false;
         string? engineError = null;
+        var started = Stopwatch.StartNew();
 
-        void OnStdout(string line)
+        var stdoutParser = new EngineOutputParser(caps.Json);
+        var stderrParser = new EngineOutputParser(json: false);
+
+        void AddPort(int port)
         {
-            rawLog.AppendLine(line);
-            logLine?.Report(line);
-            if (NetScannerParser.IsEngineError(line))
+            if (!openPorts.Contains(port))
             {
-                engineError ??= line.Trim();
-            }
-
-            foreach (int p in NetScannerParser.TryParseOpenPortsRecap(line))
-            {
-                if (!openPorts.Contains(p))
-                {
-                    openPorts.Add(p);
-                    portFound?.Report(p);
-                }
-                continue;
-            }
-
-            int? port = NetScannerParser.TryParseOpenPort(line);
-            if (port is not null && !openPorts.Contains(port.Value))
-            {
-                openPorts.Add(port.Value);
-                portFound?.Report(port.Value);
+                openPorts.Add(port);
+                portFound?.Report(port);
             }
         }
 
-        void OnStderr(string line)
+        void Handle(EngineEvent? e)
         {
-            rawLog.AppendLine(line);
-            logLine?.Report(line);
-            if (NetScannerParser.IsEngineError(line))
+            switch (e)
             {
-                engineError ??= line.Trim();
+                case PortFoundEvent found:
+                    AddPort(found.Port);
+                    break;
+                case PortSummaryEvent recap:
+                    finished = true;
+                    foreach (int port in recap.OpenPorts)
+                    {
+                        AddPort(port);
+                    }
+
+                    break;
+                case EngineErrorEvent error:
+                    engineError ??= error.Message;
+                    break;
             }
         }
 
-        int exit = await RunEngineAsync(arguments, OnStdout, OnStderr, cancellationToken);
+        int exit = await RunEngineAsync(
+            exePath,
+            arguments,
+            line => { rawLog.AppendLine(line); logLine?.Report(line); Handle(stdoutParser.Parse(line)); },
+            line => { rawLog.AppendLine(line); logLine?.Report(line); Handle(stderrParser.Parse(line) as EngineErrorEvent); },
+            cancellationToken);
+
         if (engineError is not null)
         {
             throw new InvalidOperationException(engineError);
         }
 
-        if (exit != 0 && openPorts.Count == 0 && !NetScannerParser.IsNoOpenPortsReport(rawLog.ToString()))
+        if (exit != 0 && openPorts.Count == 0 && !finished)
         {
             throw new InvalidOperationException($"ns scan failed (exit {exit}): {TrimLogTail(rawLog.ToString())}");
         }
 
         openPorts.Sort();
-        return new PortScanResult(openPorts, rawLog.ToString(), DateTime.Now - started);
+        return new PortScanResult(openPorts, rawLog.ToString(), started.Elapsed);
     }
 
     /// <summary>
@@ -282,14 +354,13 @@ public sealed class NetScannerService : INetScannerService
     /// Cancelling kills the child process so scans stop immediately.
     /// Returns the process exit code.
     /// </summary>
-    private async Task<int> RunEngineAsync(
-        System.Collections.Generic.IReadOnlyList<string> arguments,
+    private static async Task<int> RunEngineAsync(
+        string exePath,
+        IReadOnlyList<string> arguments,
         Action<string> onStdoutLine,
         Action<string> onStderrLine,
         CancellationToken cancellationToken)
     {
-        string exePath = ResolveExePath();
-
         if (exePath != "ns" && !File.Exists(exePath))
         {
             throw new FileNotFoundException(
@@ -304,6 +375,8 @@ public sealed class NetScannerService : INetScannerService
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8,
         };
         foreach (string token in arguments)
         {

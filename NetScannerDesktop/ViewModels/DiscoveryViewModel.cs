@@ -133,7 +133,7 @@ public sealed partial class DiscoveryViewModel : ObservableObject
 
     partial void OnFilterTextChanged(string value) => OnPropertyChanged(nameof(FilteredHosts));
 
-    /// <summary>0 = by IP address, 1 = by time found.</summary>
+    /// <summary>0 = by IP address, 1 = by name, 2 = by time found.</summary>
     [ObservableProperty]
     private int sortIndex;
 
@@ -148,15 +148,17 @@ public sealed partial class DiscoveryViewModel : ObservableObject
             if (!string.IsNullOrWhiteSpace(FilterText))
             {
                 string f = FilterText.Trim();
-                query = query.Where(h =>
-                    h.IpAddress.Contains(f, StringComparison.OrdinalIgnoreCase) ||
-                    h.Source.Contains(f, StringComparison.OrdinalIgnoreCase) ||
-                    (h.PortsSummary != null && h.PortsSummary.Contains(f, StringComparison.OrdinalIgnoreCase)));
+                query = query.Where(h => h.Matches(f));
             }
 
-            query = SortIndex == 0
-                ? query.OrderBy(h => IpToSortKey(h.IpAddress))
-                : query.OrderBy(h => h.FoundAt);
+            query = SortIndex switch
+            {
+                // Named devices first (alphabetically), then the rest by IP.
+                1 => query.OrderBy(h => h.Hostname is null).ThenBy(h => h.Hostname, StringComparer.OrdinalIgnoreCase)
+                          .ThenBy(h => IpToSortKey(h.IpAddress)),
+                2 => query.OrderBy(h => h.FoundAt),
+                _ => query.OrderBy(h => IpToSortKey(h.IpAddress)),
+            };
 
             return query.ToList();
         }
@@ -199,6 +201,16 @@ public sealed partial class DiscoveryViewModel : ObservableObject
     }
 
     partial void OnUsePingFallbackChanged(bool value) => AppSettings.SetBool(AppSettings.DiscoveryUsePing, value);
+
+    /// <summary>Resolve hostnames, MACs and manufacturers (<c>--resolve</c>).</summary>
+    [ObservableProperty]
+    private bool identifyDevices;
+
+    partial void OnIdentifyDevicesChanged(bool value) => AppSettings.SetBool(AppSettings.DiscoveryResolve, value);
+
+    /// <summary>False when the engine in use predates <c>--resolve</c> (e.g. an old ns on PATH).</summary>
+    [ObservableProperty]
+    private bool canIdentifyDevices = true;
 
     // Empty state ------------------------------------------------------------
 
@@ -324,6 +336,7 @@ public sealed partial class DiscoveryViewModel : ObservableObject
 
         // Restore last session: saved subnet wins, else first local net.
         UsePingFallback = AppSettings.GetBool(AppSettings.DiscoveryUsePing);
+        IdentifyDevices = AppSettings.GetBool(AppSettings.DiscoveryResolve, true);
         string saved = AppSettings.GetString(AppSettings.DiscoverySubnet);
         if (!string.IsNullOrWhiteSpace(saved))
         {
@@ -340,6 +353,7 @@ public sealed partial class DiscoveryViewModel : ObservableObject
         {
             EngineVersion = await scanner.GetVersionAsync(CancellationToken.None);
             IsEngineMissing = false;
+            CanIdentifyDevices = (await scanner.GetCapabilitiesAsync(CancellationToken.None)).Resolve;
         }
         catch (Exception ex)
         {
@@ -513,12 +527,17 @@ public sealed partial class DiscoveryViewModel : ObservableObject
             Hosts.Add(host);
             ShowProgress();
         });
+        var detailProgress = new Progress<HostDetail>(detail =>
+        {
+            Hosts.FirstOrDefault(h => h.IpAddress == detail.IpAddress)?.ApplyDetail(detail);
+        });
         var logProgress = new Progress<string>(AppendLogLine);
+        var options = new SubnetScanOptions(UsePingFallback, IdentifyDevices && CanIdentifyDevices);
 
         try
         {
             SubnetScanResult result = await scanner.ScanSubnetAsync(
-                trimmedSubnet, UsePingFallback, hostProgress, logProgress, runningScan.Token);
+                trimmedSubnet, options, hostProgress, detailProgress, logProgress, runningScan.Token);
 
             FlushLog();
             string total = FormatElapsed(stopwatch.Elapsed);
@@ -544,6 +563,9 @@ public sealed partial class DiscoveryViewModel : ObservableObject
             runningScan = null;
             hasScanned = true;
             IsScanning = false;
+
+            // Names arrive after the sweep; re-sort/filter with them.
+            OnPropertyChanged(nameof(FilteredHosts));
         }
     }
 
@@ -581,8 +603,12 @@ public sealed partial class DiscoveryViewModel : ObservableObject
         }
 
         string csv = FileSaver.ToCsv(
-            FilteredHosts.Select(h => new[] { h.IpAddress, h.Source, h.FoundAt.ToString("HH:mm:ss"), h.PortsSummary ?? string.Empty }),
-            new[] { "ip_address", "source", "found_at", "ports" });
+            FilteredHosts.Select(h => new[]
+            {
+                h.IpAddress, h.Hostname ?? string.Empty, h.MacAddress ?? string.Empty, h.Vendor ?? string.Empty,
+                h.Source, h.FoundAt.ToString("s"), h.PortsSummary ?? string.Empty,
+            }),
+            new[] { "ip_address", "hostname", "mac_address", "vendor", "source", "found_at", "ports" });
 
         string? path = SaveFileAsync is not null
             ? await SaveFileAsync("hosts", ".csv", csv)

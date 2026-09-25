@@ -135,11 +135,10 @@ public sealed partial class DiscoveryPage : Page, IResponsivePage
     {
         if (HostFromTag(sender) is { } host)
         {
-            string summary = $"{host.IpAddress} ({host.Source}) - found {host.FoundAtShort}";
-            if (!string.IsNullOrEmpty(host.PortsSummary))
+            string summary = string.Join(" - ", new[]
             {
-                summary += $" - {host.PortsSummary}";
-            }
+                host.IpAddress, host.DetailsLine, $"found via {host.Source} at {host.FoundAtShort}", host.PortsSummary,
+            }.Where(s => !string.IsNullOrEmpty(s)));
 
             CopyText(summary, $"Copied details for {host.IpAddress}.");
         }

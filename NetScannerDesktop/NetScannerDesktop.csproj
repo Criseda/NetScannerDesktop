@@ -12,8 +12,13 @@
 		<Nullable>enable</Nullable>
 		<!-- Lets the raw exe run unpackaged (MddBootstrap); no-op when deployed via MSIX. -->
 		<WindowsAppSdkBootstrapInitialize>true</WindowsAppSdkBootstrapInitialize>
-		<!-- NetScanner engine version. Keep in sync with Scripts/fetch-ns.ps1. -->
-		<NetScannerVersion>v1.1.0</NetScannerVersion>
+		<!--
+			NetScanner engine version: the only place it is pinned. fetch-ns.ps1
+			reads it, and the app reads it back via AssemblyMetadata below
+			(EngineUpdater.PinnedVersion). Add the release's SHA-256 to
+			fetch-ns.ps1 when bumping.
+		-->
+		<NetScannerVersion>v1.2.2</NetScannerVersion>
 		<NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
 	</PropertyGroup>
 
@@ -23,6 +28,10 @@
 		<Content Include="Assets\AppIcon.ico">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
+	</ItemGroup>
+
+	<ItemGroup>
+		<AssemblyMetadata Include="NetScannerVersion" Value="$(NetScannerVersion)" />
 	</ItemGroup>
 
 	<ItemGroup>
