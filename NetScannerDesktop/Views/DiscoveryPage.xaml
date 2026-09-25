@@ -111,17 +111,26 @@
                         SuggestionChosen="SubnetBox_SuggestionChosen"
                         QuerySubmitted="SubnetBox_QuerySubmitted">
                         <AutoSuggestBox.ItemTemplate>
+                            <!--
+                                The dropdown is only as wide as the box, so the
+                                subnet always gets its full width and the adapter
+                                name takes what is left, trimmed (tooltip has it all).
+                            -->
                             <DataTemplate x:DataType="services:SubnetSuggestion">
-                                <Grid ColumnSpacing="12">
+                                <Grid ColumnSpacing="12" ToolTipService.ToolTip="{x:Bind Label}">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{x:Bind Cidr}" />
+                                    <TextBlock Text="{x:Bind Cidr}" TextWrapping="NoWrap" VerticalAlignment="Center" />
                                     <TextBlock
                                         Grid.Column="1"
                                         Text="{x:Bind Label}"
-                                        Style="{StaticResource HintTextStyle}"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                        TextWrapping="NoWrap"
+                                        TextTrimming="CharacterEllipsis"
+                                        HorizontalAlignment="Right"
                                         VerticalAlignment="Center" />
                                 </Grid>
                             </DataTemplate>
