@@ -115,12 +115,12 @@ public sealed partial class SettingsViewModel : ObservableObject
         try
         {
             var v = Windows.ApplicationModel.Package.Current.Id.Version;
-            return $"{v.Major}.{v.Minor}.{v.Build}.{v.Revision}";
+            return $"{v.Major}.{v.Minor}.{v.Build}";
         }
         catch
         {
             // Unpackaged: no package identity.
-            return System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "dev";
+            return System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "dev";
         }
     }
 }
