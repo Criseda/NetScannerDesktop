@@ -308,10 +308,16 @@
                             </Grid>
                         </Border>
 
-                        <!-- While scanning, the header underline becomes the progress bar. -->
+                        <!--
+                            While scanning, the header underline becomes the progress bar:
+                            indeterminate until the engine's first progress event (engines
+                            before v1.5 send none), then the current phase's share done.
+                        -->
                         <ProgressBar
                             VerticalAlignment="Bottom"
-                            IsIndeterminate="{x:Bind ViewModel.IsScanning, Mode=OneWay}"
+                            Maximum="100"
+                            Value="{x:Bind ViewModel.ProgressPercent, Mode=OneWay}"
+                            IsIndeterminate="{x:Bind ViewModel.IsProgressIndeterminate, Mode=OneWay}"
                             Visibility="{x:Bind ViewModel.IsScanning, Mode=OneWay}"
                             AutomationProperties.Name="Scan progress" />
 

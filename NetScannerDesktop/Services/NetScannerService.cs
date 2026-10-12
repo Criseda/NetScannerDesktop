@@ -54,7 +54,8 @@ public interface INetScannerService
         IProgress<HostResult>? hostFound,
         IProgress<HostDetail>? detailFound,
         IProgress<string>? logLine,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        IProgress<ScanProgress>? scanProgress = null);
 
     Task<PortScanResult> ScanPortsAsync(
         string ipAddress,
@@ -63,7 +64,8 @@ public interface INetScannerService
         IProgress<PortResult>? portFound,
         IProgress<string>? logLine,
         CancellationToken cancellationToken,
-        int? timeoutMs = null);
+        int? timeoutMs = null,
+        IProgress<ScanProgress>? scanProgress = null);
 }
 
 /// <summary>
@@ -194,7 +196,8 @@ public sealed class NetScannerService : INetScannerService
         IProgress<HostResult>? hostFound,
         IProgress<HostDetail>? detailFound,
         IProgress<string>? logLine,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IProgress<ScanProgress>? scanProgress = null)
     {
         string exePath = ResolveExePath();
         EngineCapabilities caps = await GetCapabilitiesAsync(exePath, cancellationToken);
@@ -238,6 +241,9 @@ public sealed class NetScannerService : INetScannerService
                 case SubnetSummaryEvent s:
                     summary ??= s.Summary;
                     break;
+                case ProgressEvent p:
+                    scanProgress?.Report(p.Progress);
+                    break;
                 case EngineErrorEvent error:
                     engineError ??= error.Message;
                     break;
@@ -247,7 +253,7 @@ public sealed class NetScannerService : INetScannerService
         int exit = await RunEngineAsync(
             exePath,
             arguments,
-            line => { rawLog.AppendLine(line); logLine?.Report(line); Handle(stdoutParser.Parse(line)); },
+            line => HandleStdout(line, stdoutParser, rawLog, logLine, Handle),
             // Diagnostics only; errors are still recognised by their prefix.
             line => { rawLog.AppendLine(line); logLine?.Report(line); Handle(stderrParser.Parse(line) as EngineErrorEvent); },
             cancellationToken);
@@ -272,7 +278,8 @@ public sealed class NetScannerService : INetScannerService
         IProgress<PortResult>? portFound,
         IProgress<string>? logLine,
         CancellationToken cancellationToken,
-        int? timeoutMs = null)
+        int? timeoutMs = null,
+        IProgress<ScanProgress>? scanProgress = null)
     {
         string exePath = ResolveExePath();
         EngineCapabilities caps = await GetCapabilitiesAsync(exePath, cancellationToken);
@@ -323,6 +330,9 @@ public sealed class NetScannerService : INetScannerService
                     }
 
                     break;
+                case ProgressEvent p:
+                    scanProgress?.Report(p.Progress);
+                    break;
                 case EngineErrorEvent error:
                     engineError ??= error.Message;
                     break;
@@ -332,7 +342,7 @@ public sealed class NetScannerService : INetScannerService
         int exit = await RunEngineAsync(
             exePath,
             arguments,
-            line => { rawLog.AppendLine(line); logLine?.Report(line); Handle(stdoutParser.Parse(line)); },
+            line => HandleStdout(line, stdoutParser, rawLog, logLine, Handle),
             line => { rawLog.AppendLine(line); logLine?.Report(line); Handle(stderrParser.Parse(line) as EngineErrorEvent); },
             cancellationToken);
 
@@ -348,6 +358,23 @@ public sealed class NetScannerService : INetScannerService
 
         return new PortScanResult(
             openPorts.Values.OrderBy(p => p.Port).ToList(), rawLog.ToString(), started.Elapsed);
+    }
+
+    /// <summary>
+    /// Parses one stdout line and logs it, except progress events: up to
+    /// ~100 per phase would bury the results in the log, and the bar shows them.
+    /// </summary>
+    private static void HandleStdout(
+        string line, EngineOutputParser parser, StringBuilder rawLog, IProgress<string>? logLine, Action<EngineEvent?> handle)
+    {
+        EngineEvent? e = parser.Parse(line);
+        if (e is not ProgressEvent)
+        {
+            rawLog.AppendLine(line);
+            logLine?.Report(line);
+        }
+
+        handle(e);
     }
 
     /// <summary>

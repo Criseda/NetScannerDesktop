@@ -510,18 +510,21 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
         });
 
         await RunScanAsync(
-            elapsed => $"Scanning {target} • {FormatElapsed(elapsed)} • {HostCountTitle} found…",
+            elapsed => ScanningStatus(target, elapsed),
             async (token, stopwatch) =>
             {
                 SubnetScanResult result = await Scanner.ScanSubnetAsync(
-                    target, options, hostProgress, detailProgress, new Progress<string>(AppendLogLine), token);
+                    target, options, hostProgress, detailProgress, new Progress<string>(AppendLogLine), token,
+                    new Progress<ScanProgress>(ReportScanProgress));
 
                 string total = FormatElapsed(stopwatch.Elapsed);
                 StatusText = result.Hosts.Count == 0
                     ? $"No hosts found on {target} ({total})."
                     : $"{HostCountTitle} found on {target} in {total}.";
             },
-            elapsed => $"Cancelled after {FormatElapsed(elapsed)} — {HostCountTitle} found.");
+            elapsed => CurrentProgress is { } at
+                ? $"Cancelled after {FormatElapsed(elapsed)}, {PhaseName(at.Phase)} at {at.Text} — {HostCountTitle} found."
+                : $"Cancelled after {FormatElapsed(elapsed)} — {HostCountTitle} found.");
 
         hasScanned = true;
 
@@ -529,6 +532,29 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
         hostView.Refresh();
         NotifyEmptyStateChanged();
     }
+
+    /// <summary>
+    /// Status while scanning. Each phase names itself, since the bar
+    /// restarts for each: "Scanning 192.168.1.0/24 • 42% • 1.2s • 7 hosts found…".
+    /// </summary>
+    private string ScanningStatus(string target, TimeSpan elapsed)
+    {
+        string time = FormatElapsed(elapsed);
+        return CurrentProgress?.Phase switch
+        {
+            ScanProgress.ArpPhase => $"Checking quiet hosts • {ProgressStatusPart(false)} • {time} • {HostCountTitle} found…",
+            ScanProgress.IdentifyPhase => $"Identifying devices • {ProgressStatusPart(false)} • {time} • {HostCountTitle} found…",
+            null => $"Scanning {target} • {time} • {HostCountTitle} found…",
+            _ => $"Scanning {target} • {ProgressStatusPart(false)} • {time} • {HostCountTitle} found…",
+        };
+    }
+
+    private static string PhaseName(string phase) => phase switch
+    {
+        ScanProgress.ArpPhase => "checking quiet hosts",
+        ScanProgress.IdentifyPhase => "identifying devices",
+        _ => "sweep",
+    };
 
     // Copy button: the main part copies IP addresses; its dropdown offers
     // the other columns and the whole table. All act on the visible rows.
