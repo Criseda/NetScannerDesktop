@@ -38,22 +38,38 @@ This fetches the pinned release into `NetScannerDesktop/Assets/Tools/`,
 checksum-verified, and ships it as app Content so it also lands in the
 MSIX package. The build runs the script automatically.
 
-`<NetScannerVersion>` in `NetScannerDesktop.csproj` is the only place the
-version is pinned; the script and the app both read it. To bump it, change
-that value and add the release's `windows.zip` SHA-256 to
-`$ExpectedSha256ByVersion` in `Scripts/fetch-ns.ps1`.
-
 To use an engine that is built but not yet published (e.g. from a
-NetScanner PR), install its zip locally; the pinned SHA-256 still applies:
+NetScanner PR), install its zip locally with its version and SHA-256:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File Scripts/fetch-ns.ps1 -ZipPath ..\NetScanner\zig-out\releases\windows.zip
+powershell -ExecutionPolicy Bypass -File Scripts/fetch-ns.ps1 -ZipPath ..\NetScanner\zig-out\releases\windows.zip -Version v1.7.0 -Sha256 <hash> -Force
 ```
 
-At runtime the app can also install a newer engine per-user (Discovery
-offers it). Updates are SHA-256 checked against the GitHub release digest
-before they run, limited to the pinned major version, and the app always
-launches the newest compatible copy it has.
+The app only ever runs the `ns.exe` it ships with. It never downloads
+code, so a new engine always reaches users as a new app release (which is
+also what the Microsoft Store requires).
+
+## Versions and releases
+
+Every version lives in [`Directory.Build.props`](Directory.Build.props),
+and nothing else restates them:
+
+- `Version`: the app. Stamped into the exe, the MSIX manifest (leave
+  `Package.appxmanifest` at `0.0.0.0`), the installer and the file names.
+- `NetScannerVersion` + `NetScannerSha256`: the bundled engine and the
+  SHA-256 of its release `windows.zip`. The build refuses a mismatch.
+- The Windows App SDK, Windows SDK build tools and MVVM Toolkit versions
+  shared by the app, package and test projects.
+
+How a release happens:
+
+1. **Engine update** (daily, or run it from the Actions tab) finds a new
+   NetScanner release and opens a PR that pins it and bumps `Version`
+   (engine patch → app patch, otherwise app minor). Locally:
+   `pwsh -File Scripts/update-engine.ps1`.
+2. Merging any change to `Version` on master runs **Release**, which builds
+   the installer and portable zip and creates a draft GitHub release.
+3. Write the notes in the draft and publish it (this creates the tag).
 
 The app asks for `ns --json` output whenever the engine advertises it, and
 falls back to reading the text output of v1.1–v1.2 engines.
@@ -71,24 +87,28 @@ lacks the Appx packaging tasks):
 & "C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe" NetScannerDesktop.sln /p:Configuration=Debug /p:Platform=x64 /t:Build /m
 ```
 
-Tests (parser, validation, list view, CSV, versions) run without Visual
+Tests (parser, validation, list view, CSV) run without Visual
 Studio:
 
 ```powershell
 dotnet test Tests/NetScannerDesktop.Tests
 ```
 
-The Windows App SDK package is pinned to the release that matches the
-widely installed 1.8 runtime (8000.946). Newer 1.8 builds refuse to start
-unpackaged on machines that only have that runtime, so bump it deliberately.
+The Windows App SDK package is pinned (in `Directory.Build.props`) to the
+release that matches the widely installed 1.8 runtime (8000.946). Newer 1.8
+builds refuse to start unpackaged on machines that only have that runtime,
+so bump it deliberately.
 
 ## Layout
 
+- `Directory.Build.props` — app, engine and shared package versions
 - `Scripts/fetch-ns.ps1` — downloads the pinned `ns.exe`
+- `Scripts/update-engine.ps1` — pins the latest engine release
+- `Scripts/build-release.ps1` — installer and portable zip
+- `.github/workflows/` — CI, Engine update, Release
 - `NetScannerDesktop/Models/` — hosts, host details, ports, scan summaries
 - `NetScannerDesktop/Services/` — engine runner (`NetScannerService`), output
-  parser (`EngineOutputParser` in `NetScannerParser.cs`), engine updater,
-  validation, settings/history storage, CSV export, `FilteredSortedView`
+  parser (`EngineOutputParser` in `NetScannerParser.cs`), validation, settings/history storage, CSV export, `FilteredSortedView`
   and `TableSort` (the sortable result tables)
 - `NetScannerDesktop/ViewModels/` — `ScanViewModelBase` (shared scan
   plumbing), `DiscoveryViewModel`, `PortScanViewModel`, `SettingsViewModel`

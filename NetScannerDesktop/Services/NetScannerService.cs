@@ -78,74 +78,18 @@ public interface INetScannerService
 /// </summary>
 public sealed class NetScannerService : INetScannerService
 {
-    private static readonly ConcurrentDictionary<(string Path, DateTime Written), string?> VersionCache = new();
     private static readonly ConcurrentDictionary<(string Path, DateTime Written), EngineCapabilities> CapabilityCache = new();
 
     /// <summary>
-    /// Picks the newest compatible engine among the bundled copy (MSBuild
-    /// Content / MSIX package) and the per-user self-update. Newest wins so
-    /// an app update that bundles a newer engine is never shadowed by an
-    /// older self-updated copy. Falls back to <c>ns</c> on PATH (e.g.
-    /// <c>zig build</c> devs).
+    /// The engine bundled with the app (MSBuild Content / MSIX package). It
+    /// is the only one the app runs: a new engine arrives with an app
+    /// update. Falls back to <c>ns</c> on PATH (e.g. <c>zig build</c> devs).
     /// </summary>
     public string ResolveExePath()
     {
         string bundled = Path.GetFullPath(Path.Combine(
             AppContext.BaseDirectory, "Assets", "Tools", "ns.exe"));
-
-        string? best = null;
-        string? bestVersion = null;
-        foreach (string candidate in new[] { bundled, EngineUpdater.UserExePath })
-        {
-            if (!File.Exists(candidate))
-            {
-                continue;
-            }
-
-            string? version = ReadInstalledVersion(candidate);
-            if (version is not null && !EngineUpdater.IsCompatible(version))
-            {
-                continue;
-            }
-
-            // An unreadable version only wins when nothing else is present.
-            if (best is null ||
-                (version is not null && (bestVersion is null || EngineUpdater.IsNewerThan(version, bestVersion))))
-            {
-                best = candidate;
-                bestVersion = version;
-            }
-        }
-
-        return best ?? "ns";
-    }
-
-    /// <summary>
-    /// Version of an installed ns.exe: its ns.version.txt sidecar when
-    /// present (written by fetch-ns.ps1 and EngineUpdater), otherwise one
-    /// <c>--version</c> probe cached per file timestamp.
-    /// </summary>
-    private static string? ReadInstalledVersion(string exePath)
-    {
-        try
-        {
-            string sidecar = Path.Combine(Path.GetDirectoryName(exePath)!, EngineUpdater.VersionFileName);
-            if (File.Exists(sidecar))
-            {
-                string text = File.ReadAllText(sidecar).Trim();
-                if (text.Length > 0)
-                {
-                    return text;
-                }
-            }
-
-            return VersionCache.GetOrAdd((exePath, File.GetLastWriteTimeUtc(exePath)),
-                key => EngineUpdater.ProbeVersion(key.Path));
-        }
-        catch
-        {
-            return null;
-        }
+        return File.Exists(bundled) ? bundled : "ns";
     }
 
     public async Task<string> GetVersionAsync(CancellationToken cancellationToken)

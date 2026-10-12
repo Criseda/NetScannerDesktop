@@ -1,0 +1,82 @@
+# A new NetScanner engine release becomes a new app release: this opens a
+# PR that pins the engine (version + SHA-256) and bumps the app version,
+# all in Directory.Build.props. Merging it triggers the Release workflow.
+#
+# Needs Settings > Actions > General > "Allow GitHub Actions to create and
+# approve pull requests". PRs opened with GITHUB_TOKEN do not start other
+# workflows, so this job runs the tests itself before opening one.
+
+name: Engine update
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Engine release tag (empty for the latest)
+        required: false
+  # Lets the NetScanner repo announce a release right away:
+  # gh api repos/Criseda/NetScannerDesktop/dispatches -f event_type=engine-released
+  repository_dispatch:
+    types: [engine-released]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency: engine-update
+
+jobs:
+  bump:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pin latest engine
+        id: update
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./Scripts/update-engine.ps1 -Tag "${{ inputs.tag }}"
+
+      - name: Skip if a PR already exists
+        id: branch
+        if: steps.update.outputs.updated == 'true'
+        shell: pwsh
+        run: |
+          $branch = "engine/${{ steps.update.outputs.engine }}"
+          "name=$branch" >> $env:GITHUB_OUTPUT
+          $exists = git ls-remote --heads origin $branch
+          "exists=$(if ($exists) { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-dotnet@v4
+        if: steps.update.outputs.updated == 'true' && steps.branch.outputs.exists == 'false'
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Test
+        if: steps.update.outputs.updated == 'true' && steps.branch.outputs.exists == 'false'
+        run: dotnet test Tests/NetScannerDesktop.Tests
+
+      - name: Open PR
+        if: steps.update.outputs.updated == 'true' && steps.branch.outputs.exists == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $engine = "${{ steps.update.outputs.engine }}"
+          $previous = "${{ steps.update.outputs.previous_engine }}"
+          $app = "${{ steps.update.outputs.app }}"
+          $branch = "${{ steps.branch.outputs.name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c $branch
+          git commit -am "Engine $engine, version $app"
+          git push origin $branch
+          $body = @"
+          Pins the [NetScanner $engine](https://github.com/Criseda/NetScanner/releases/tag/$engine) engine (was $previous) and sets the app version to **$app**. The SHA-256 comes from the release's published digest and was verified by downloading the engine.
+
+          [Engine changes](https://github.com/Criseda/NetScanner/compare/$previous...$engine): check whether the app should surface anything new before merging. Merging starts the Release workflow, which builds a draft release.
+          "@
+          gh pr create --base master --head $branch --title "Engine $engine" --body $body

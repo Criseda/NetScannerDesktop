@@ -67,18 +67,6 @@
                 IsOpen="{x:Bind ViewModel.IsNoticeOpen, Mode=TwoWay}"
                 Message="{x:Bind ViewModel.NoticeText, Mode=OneWay}"
                 Severity="{x:Bind ViewModel.NoticeSeverity, Mode=OneWay}" />
-            <InfoBar
-                IsOpen="{x:Bind ViewModel.IsUpdateAvailable, Mode=TwoWay}"
-                Title="Engine update available"
-                Message="{x:Bind ViewModel.UpdateAvailableText, Mode=OneWay}"
-                Severity="Informational">
-                <InfoBar.ActionButton>
-                    <Button
-                        Content="{x:Bind ViewModel.UpdateButtonText, Mode=OneWay}"
-                        Command="{x:Bind ViewModel.UpdateEngineCommand}"
-                        AutomationProperties.Name="Update engine now" />
-                </InfoBar.ActionButton>
-            </InfoBar>
         </StackPanel>
 
         <!--

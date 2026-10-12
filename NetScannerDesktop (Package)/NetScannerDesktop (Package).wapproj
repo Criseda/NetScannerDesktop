@@ -66,8 +66,29 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260804001" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="$(WindowsSdkBuildToolsVersion)" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="$(WindowsAppSdkVersion)" />
   </ItemGroup>
   <Import Project="$(WapProjPath)\Microsoft.DesktopBridge.targets" />
+  <!--
+    The package version comes from <Version> in Directory.Build.props, not
+    from Package.appxmanifest (whose Version is a placeholder). Packaging
+    reads a copy of the manifest with the real version stamped in. The
+    fourth part stays 0, as the Microsoft Store requires.
+  -->
+  <Target Name="StampPackageVersion" BeforeTargets="BeforeBuild">
+    <PropertyGroup>
+      <_StampedManifest>$(IntermediateOutputPath)Package.appxmanifest</_StampedManifest>
+    </PropertyGroup>
+    <Copy SourceFiles="Package.appxmanifest" DestinationFiles="$(_StampedManifest)" />
+    <XmlPoke
+      XmlInputPath="$(_StampedManifest)"
+      Query="/m:Package/m:Identity/@Version"
+      Value="$(Version).0"
+      Namespaces="&lt;Namespace Prefix='m' Uri='http://schemas.microsoft.com/appx/manifest/foundation/windows10' /&gt;" />
+    <ItemGroup>
+      <AppxManifest Remove="@(AppxManifest)" />
+      <AppxManifest Include="$(_StampedManifest)" />
+    </ItemGroup>
+  </Target>
 </Project>

@@ -1,0 +1,88 @@
+# Builds a draft GitHub release whenever master carries an app version
+# (<Version> in Directory.Build.props) that has no release yet. Write the
+# notes in the draft, then publish it; publishing creates the v<Version> tag.
+
+name: Release
+
+on:
+  push:
+    branches: [master]
+    paths: [Directory.Build.props]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: release
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read versions
+        id: version
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $group = ([xml](Get-Content Directory.Build.props)).Project.PropertyGroup
+          $version = $group.Version | Where-Object { $_ } | Select-Object -First 1
+          $engine = $group.NetScannerVersion | Where-Object { $_ } | Select-Object -First 1
+          "app=$version" >> $env:GITHUB_OUTPUT
+          "engine=$engine" >> $env:GITHUB_OUTPUT
+          # Drafts included: a second push must not make a second draft.
+          $known = gh release list --limit 100 --json tagName --jq '.[].tagName'
+          "exists=$(if ($known -contains "v$version") { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-dotnet@v4
+        if: steps.version.outputs.exists == 'false'
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Install Inno Setup
+        if: steps.version.outputs.exists == 'false'
+        run: choco install innosetup --no-progress -y
+
+      - name: Test
+        if: steps.version.outputs.exists == 'false'
+        run: dotnet test Tests/NetScannerDesktop.Tests
+
+      - name: Build installer and portable zip
+        if: steps.version.outputs.exists == 'false'
+        run: pwsh -File Scripts/build-release.ps1
+
+      - name: Create draft release
+        if: steps.version.outputs.exists == 'false'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $v = "${{ steps.version.outputs.app }}"
+          $engine = "${{ steps.version.outputs.engine }}"
+          $previous = gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName'
+          $sums = Get-Content artifacts/SHA256SUMS.txt -Raw
+          $notes = @"
+          Powered by the [NetScanner](https://github.com/Criseda/NetScanner) engine [$engine](https://github.com/Criseda/NetScanner/releases/tag/$engine).
+
+          ### What's New
+          - TODO
+
+          ### Download
+          - **``NetScanner-Setup-$v-x64.exe``** (recommended): installs for your user account only, with no admin prompt. Upgrades an earlier version in place and keeps your settings and scan history.
+          - **``NetScanner-$v-x64-portable.zip``**: no install. Extract anywhere and run ``NetScanner\NetScannerDesktop.exe``.
+
+          Nothing else is needed: .NET and the Windows App SDK are included. Works on Windows 10 (1809 or later) and Windows 11, on x64 and ARM64 (via emulation).
+
+          > **"Windows protected your PC"?** The app isn't code-signed yet, so SmartScreen may warn on first launch. Click **More info → Run anyway**. You can check your download against ``SHA256SUMS.txt``.
+
+          ### Checksums (SHA-256)
+          ``````
+          $($sums.Trim())
+          ``````
+
+          **Full changelog**: https://github.com/Criseda/NetScannerDesktop/compare/$previous...v$v
+          "@
+          gh release create "v$v" --draft --target $env:GITHUB_SHA --title "NetScanner $v" --notes $notes `
+            "artifacts/NetScanner-Setup-$v-x64.exe" "artifacts/NetScanner-$v-x64-portable.zip" artifacts/SHA256SUMS.txt
