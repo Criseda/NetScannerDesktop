@@ -81,31 +81,6 @@ public class NetworkValidationTests
     }
 }
 
-public class EngineVersionTests
-{
-    [Fact]
-    public void Pinned_version_comes_from_the_app_csproj() =>
-        Assert.Matches(@"^v\d+\.\d+\.\d+$", EngineUpdater.PinnedVersion);
-
-    [Theory]
-    [InlineData("v1.2.2", "v1.1.0", 1)]
-    [InlineData("v1.10.0", "v1.9.9", 1)]
-    [InlineData("1.2.2", "v1.2.2", 0)]
-    [InlineData("v1.2.0-beta", "v1.2.0", 0)]
-    [InlineData("v1.1.0", "v1.2.2", -1)]
-    public void Versions_compare_numerically(string a, string b, int sign) =>
-        Assert.Equal(sign, Math.Sign(EngineUpdater.CompareVersions(a, b)));
-
-    [Fact]
-    public void Only_the_pinned_major_is_compatible()
-    {
-        string major = EngineUpdater.PinnedVersion.TrimStart('v').Split('.')[0];
-        int next = int.Parse(major) + 1;
-        Assert.True(EngineUpdater.IsCompatible($"v{major}.99.0"));
-        Assert.False(EngineUpdater.IsCompatible($"v{next}.0.0"));
-    }
-}
-
 public class FilteredSortedViewTests
 {
     private static readonly IComparer<int> Ascending = Comparer<int>.Default;

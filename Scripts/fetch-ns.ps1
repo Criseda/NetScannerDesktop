@@ -8,16 +8,18 @@
 #
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File Scripts/fetch-ns.ps1
-#   powershell -File Scripts/fetch-ns.ps1 -Version v1.2.2 -Force
+#   powershell -File Scripts/fetch-ns.ps1 -Version v1.2.2 -Sha256 <hash> -Force
 #   powershell -File Scripts/fetch-ns.ps1 -ZipPath ..\NetScanner\zig-out\releases\windows.zip
 #
 # Output:
 #   NetScannerDesktop/Assets/Tools/ns.exe (gitignored, copied to build output)
 
 param(
-    # NetScanner release tag to download. Defaults to <NetScannerVersion>
-    # in NetScannerDesktop.csproj, the single place the version is pinned.
+    # NetScanner release tag to download, and the SHA-256 of its
+    # windows.zip. Both default to <NetScannerVersion> / <NetScannerSha256>
+    # in Directory.Build.props, the single place the engine is pinned.
     [string]$Version,
+    [string]$Sha256,
 
     # Where ns.exe should land. Defaults to the in-project Assets folder
     # so MSBuild can pick it up as Content.
@@ -28,32 +30,23 @@ param(
 
     # Install from a local windows.zip instead of downloading, e.g. a
     # release built with `zig build release` before it is published on
-    # GitHub. Same SHA-256 check as a download: pin the zip's hash first.
+    # GitHub. Same SHA-256 check as a download: pass the zip's hash.
     [string]$ZipPath
 )
 
 $ErrorActionPreference = "Stop"
 
 if (-not $Version) {
-    $csproj = Join-Path $PSScriptRoot "..\NetScannerDesktop\NetScannerDesktop.csproj"
-    $Version = ([xml](Get-Content $csproj)).Project.PropertyGroup.NetScannerVersion | Where-Object { $_ } | Select-Object -First 1
-    if (-not $Version) { throw "No <NetScannerVersion> found in $csproj." }
+    $props = Join-Path $PSScriptRoot "..\Directory.Build.props"
+    $group = ([xml](Get-Content $props)).Project.PropertyGroup
+    $Version = $group.NetScannerVersion | Where-Object { $_ } | Select-Object -First 1
+    if (-not $Version) { throw "No <NetScannerVersion> found in $props." }
+    if (-not $Sha256) { $Sha256 = $group.NetScannerSha256 | Where-Object { $_ } | Select-Object -First 1 }
 }
 
 # Single Windows asset published by NetScanner releases.
 # Example: https://github.com/Criseda/NetScanner/releases/download/v1.0.0/windows.zip
 $DownloadUrl = "https://github.com/Criseda/NetScanner/releases/download/$Version/windows.zip"
-
-# SHA-256 of windows.zip, from the GitHub release API. Update this when
-# bumping $Version. Download fails closed when the hash does not match.
-$ExpectedSha256ByVersion = @{
-    "v1.0.0" = "ecbc843dcc37942bf1b28ecaa111b7e6c120aee840899a8ea0077344dfc74263"
-    "v1.1.0" = "d6e778bff05fb5c7db55313488a5df3fe3b56105e2e8daab4070f29f5a092c84"
-    "v1.2.2" = "0b843db6e39f24849b6ef47302f7877ccd396022fab500378156445ba716b264"
-    "v1.3.0" = "ff857ac662742996a71471c74b3a4e6275dcda7dbc913239cef27a38b9f21e1b"
-    "v1.4.0" = "4636bfb26b6bff26f111bddc1dabb4e5377f8b2f08c475be6de3905688c97222"
-    "v1.6.0" = "da1f5a92f6305c6f344c433199340dfd4b518917f5491b3a36c00072b5f46b4f"
-}
 
 $ExePath = Join-Path $OutputDir "ns.exe"
 $VersionFile = Join-Path $OutputDir "ns.version.txt"
@@ -81,8 +74,9 @@ if (-not $Force -and -not $ZipPath) {
     }
 }
 
-if (-not $ExpectedSha256ByVersion.ContainsKey($Version)) {
-    throw "No SHA-256 pinned for NetScanner $Version. Add it to `$ExpectedSha256ByVersion in $($MyInvocation.MyCommand.Path)."
+# Fail closed: nothing is extracted or run without a hash to check it against.
+if ($Sha256 -notmatch '^[0-9a-fA-F]{64}$') {
+    throw "No valid SHA-256 for NetScanner $Version. Pass -Sha256, or set <NetScannerSha256> in Directory.Build.props."
 }
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
@@ -112,7 +106,7 @@ try {
         $stream.Dispose()
         $sha.Dispose()
     }
-    $expectedHash = $ExpectedSha256ByVersion[$Version].ToLowerInvariant()
+    $expectedHash = $Sha256.ToLowerInvariant()
     if ($actualHash -ne $expectedHash) {
         throw "SHA-256 mismatch for windows.zip. Expected $expectedHash, got $actualHash."
     }

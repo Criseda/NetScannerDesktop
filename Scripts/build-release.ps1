@@ -6,7 +6,7 @@
 #
 # Both are self-contained (.NET runtime and Windows App SDK included), so
 # users need nothing else installed. The version comes from <Version> in
-# NetScannerDesktop.csproj; the engine is the pinned ns.exe (fetch-ns.ps1).
+# Directory.Build.props; the engine is the pinned ns.exe (fetch-ns.ps1).
 #
 # Requires Visual Studio 2022+ (MSBuild with the Windows App SDK workload)
 # and Inno Setup 6 (winget install JRSoftware.InnoSetup).
@@ -26,8 +26,9 @@ $artifacts = Join-Path $root "artifacts"
 $rid = "win-$($Platform.ToLowerInvariant())"
 $publishDir = Join-Path $artifacts "publish\$rid"
 
-$version = ([xml](Get-Content $csproj)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
-if (-not $version) { throw "No <Version> in $csproj." }
+$props = Join-Path $root "Directory.Build.props"
+$version = ([xml](Get-Content $props)).Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+if (-not $version) { throw "No <Version> in $props." }
 Write-Host "Building NetScanner $version ($rid)"
 
 # Tools ------------------------------------------------------------------

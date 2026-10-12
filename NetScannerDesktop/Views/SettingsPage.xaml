@@ -110,12 +110,9 @@
                         <Run Text="Version " /><Run Text="{x:Bind ViewModel.AppVersion, Mode=OneWay}" />
                     </TextBlock>
                     <toolkit:SettingsExpander.Items>
-                        <toolkit:SettingsCard Header="Scan engine" Description="The ns engine does the scanning. Newer compatible releases can be installed from Discovery.">
-                            <TextBlock Style="{StaticResource HintTextStyle}" TextAlignment="Right" IsTextSelectionEnabled="True">
-                                <Run Text="Installed " /><Run Text="{x:Bind ViewModel.EngineVersion, Mode=OneWay}" />
-                                <LineBreak />
-                                <Run Text="Bundled " /><Run Text="{x:Bind ViewModel.BundledEngineVersion}" />
-                                <Run Text=" · Latest " /><Run Text="{x:Bind ViewModel.LatestEngineVersion, Mode=OneWay}" />
+                        <toolkit:SettingsCard Header="Scan engine" Description="The ns engine does the scanning. It ships with the app, so app updates bring new engine versions.">
+                            <TextBlock Style="{StaticResource HintTextStyle}" IsTextSelectionEnabled="True">
+                                <Run Text="ns " /><Run Text="{x:Bind ViewModel.EngineVersion, Mode=OneWay}" />
                             </TextBlock>
                         </toolkit:SettingsCard>
                         <toolkit:SettingsCard Header="Crash log" Description="{x:Bind ViewModel.CrashLogPath}">

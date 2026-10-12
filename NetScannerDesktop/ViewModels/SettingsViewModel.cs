@@ -41,12 +41,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string engineVersion = "…";
 
-    [ObservableProperty]
-    private string latestEngineVersion = "…";
-
     public bool HasPortRangeError => !string.IsNullOrEmpty(PortRangeError);
-
-    public string BundledEngineVersion => EngineUpdater.PinnedVersion;
 
     public string CrashLogPath => App.CrashLogPath;
 
@@ -105,9 +100,6 @@ public sealed partial class SettingsViewModel : ObservableObject
         {
             EngineVersion = "not found";
         }
-
-        // Shared with Discovery's check; silent when offline.
-        LatestEngineVersion = (await EngineUpdater.GetLatestReleaseAsync())?.Tag ?? "unknown";
     }
 
     private static string GetAppVersion()

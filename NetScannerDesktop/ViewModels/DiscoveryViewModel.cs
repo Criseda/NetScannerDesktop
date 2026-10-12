@@ -250,7 +250,6 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
     protected override void OnScanStateChanged()
     {
         ScanCommand.NotifyCanExecuteChanged();
-        UpdateEngineCommand.NotifyCanExecuteChanged();
         NotifyEmptyStateChanged();
     }
 
@@ -340,9 +339,9 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
     private bool loaded;
 
     /// <summary>
-    /// One-time startup: restore the form, probe the engine, check for an
-    /// update. The page is cached, so navigating back must not repeat this
-    /// (it would overwrite what the user typed and re-open dismissed bars).
+    /// One-time startup: restore the form and probe the engine. The page is
+    /// cached, so navigating back must not repeat this (it would overwrite
+    /// what the user typed and re-open dismissed bars).
     /// </summary>
     public async Task LoadAsync()
     {
@@ -379,9 +378,6 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
 
         EngineVersion = version;
         CanIdentifyDevices = (await Scanner.GetCapabilitiesAsync(CancellationToken.None)).Resolve;
-
-        // Fire-and-forget: a slow/offline network must never block startup.
-        _ = CheckEngineUpdateAsync();
     }
 
     /// <summary>
@@ -392,79 +388,6 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
         foreach (HostResult host in Hosts)
         {
             host.OpenPorts = ScanHistoryService.TryGet(host.IpAddress, out var history) ? history?.OpenPorts : null;
-        }
-    }
-
-    // Engine update ----------------------------------------------------------
-
-    [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(UpdateEngineCommand))]
-    private bool isUpdateAvailable;
-
-    [ObservableProperty]
-    private string updateAvailableText = string.Empty;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(UpdateButtonText))]
-    [NotifyCanExecuteChangedFor(nameof(UpdateEngineCommand))]
-    private bool isUpdating;
-
-    public string UpdateButtonText => IsUpdating ? "Updating…" : "Update";
-
-    public bool CanUpdateEngine => IsUpdateAvailable && !IsUpdating && !IsScanning;
-
-    private EngineRelease? pendingRelease;
-
-    private async Task CheckEngineUpdateAsync()
-    {
-        // Null when offline or on an API hiccup: stay silent, keep the current engine.
-        EngineRelease? latest = await EngineUpdater.GetLatestReleaseAsync();
-
-        // Only offer what UpdateAsync will accept: same major version and a
-        // published checksum. Anything else arrives with an app update.
-        if (latest is not null &&
-            EngineUpdater.IsNewerThan(latest.Tag, EngineVersion) &&
-            EngineUpdater.IsCompatible(latest.Tag) &&
-            latest.Sha256 is not null)
-        {
-            pendingRelease = latest;
-            UpdateAvailableText = $"ns {latest.Tag} is available (you have {EngineVersion}).";
-            IsUpdateAvailable = true;
-        }
-    }
-
-    [RelayCommand(CanExecute = nameof(CanUpdateEngine))]
-    private async Task UpdateEngineAsync()
-    {
-        if (pendingRelease is null)
-        {
-            return;
-        }
-
-        IsUpdating = true;
-        StatusText = $"Updating engine to {pendingRelease.Tag}…";
-
-        try
-        {
-            string installed = await EngineUpdater.UpdateAsync(
-                pendingRelease, new Progress<string>(AppendLogLine), CancellationToken.None);
-
-            EngineVersion = installed;
-            IsEngineMissing = false;
-            IsUpdateAvailable = false;
-            pendingRelease = null;
-            CanIdentifyDevices = (await Scanner.GetCapabilitiesAsync(CancellationToken.None)).Resolve;
-            StatusText = $"Engine updated to ns {installed}.";
-        }
-        catch (Exception ex)
-        {
-            ShowNotice($"Engine update failed: {ex.Message}", InfoBarSeverity.Error);
-            StatusText = "Engine update failed.";
-        }
-        finally
-        {
-            FlushLog();
-            IsUpdating = false;
         }
     }
 

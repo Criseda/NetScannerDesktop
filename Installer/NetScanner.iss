@@ -64,6 +64,9 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 ; Upgrades replace the whole app folder, so files dropped by a newer
 ; build never linger next to the new ones.
 Type: filesandordirs; Name: "{app}\*"
+; Engines self-installed by app versions before 1.2. The app now only runs
+; the ns.exe it ships with.
+Type: filesandordirs; Name: "{localappdata}\NetScanner\Tools"
 
 [Files]
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -75,5 +78,5 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
-; Settings, scan history and any self-updated engine live in
+; Settings and scan history live in
 ; %LOCALAPPDATA%\NetScanner and are kept on uninstall, like most apps.

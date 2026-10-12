@@ -4,8 +4,6 @@
 		<TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
 		<TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
 		<RootNamespace>NetScannerDesktop</RootNamespace>
-		<!-- App version: shown in Settings > About and stamped into the installer by Scripts/build-release.ps1. -->
-		<Version>1.1.0</Version>
 		<ApplicationManifest>app.manifest</ApplicationManifest>
 		<ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
 		<Platforms>x86;x64;ARM64</Platforms>
@@ -20,13 +18,6 @@
 			CoreMessagingXP.dll (0xC0000602) before Main.
 		-->
 		<WindowsAppSdkBootstrapInitialize Condition="'$(WindowsAppSDKSelfContained)' != 'true'">true</WindowsAppSdkBootstrapInitialize>
-		<!--
-			NetScanner engine version: the only place it is pinned. fetch-ns.ps1
-			reads it, and the app reads it back via AssemblyMetadata below
-			(EngineUpdater.PinnedVersion). Add the release's SHA-256 to
-			fetch-ns.ps1 when bumping.
-		-->
-		<NetScannerVersion>v1.6.0</NetScannerVersion>
 		<NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
 	</PropertyGroup>
 
@@ -39,25 +30,20 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<AssemblyMetadata Include="NetScannerVersion" Value="$(NetScannerVersion)" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+		<PackageReference Include="CommunityToolkit.Mvvm" Version="$(CommunityToolkitMvvmVersion)" />
 		<PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.251219" />
-		<PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.9169" />
-		<PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260804001" />
+		<PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="$(WindowsSdkBuildToolsVersion)" />
+		<PackageReference Include="Microsoft.WindowsAppSDK" Version="$(WindowsAppSdkVersion)" />
 	</ItemGroup>
 
 	<!--
 		The ns.exe engine is downloaded by Scripts/fetch-ns.ps1, not stored in git.
-		It is Content so it lands next to the app exe and flows into the MSIX package.
+		It is Content so it lands next to the app exe and flows into the MSIX
+		package. It is the only engine the app runs: a new engine ships as a
+		new app release (see Directory.Build.props).
 	-->
 	<ItemGroup>
 		<Content Include="Assets\Tools\ns.exe">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-		</Content>
-		<Content Include="Assets\Tools\ns.version.txt">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 		</Content>
 	</ItemGroup>
@@ -70,7 +56,7 @@
 		CI with no network should pre-run Scripts/fetch-ns.ps1 instead.
 	-->
 	<Target Name="FetchNetScanner" BeforeTargets="BeforeBuild">
-		<Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\Scripts\fetch-ns.ps1&quot; -Version $(NetScannerVersion)" />
+		<Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\Scripts\fetch-ns.ps1&quot; -Version $(NetScannerVersion) -Sha256 $(NetScannerSha256)" />
 	</Target>
 
 	<!-- Publish Properties -->

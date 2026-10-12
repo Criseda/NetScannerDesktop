@@ -1,0 +1,31 @@
+<Project>
+	<!--
+		Every version in the repo, in one place. MSBuild imports this file into
+		all projects (app, MSIX package, tests), and the scripts read it, so
+		nothing else may restate these values:
+
+		- Version: the app release. The csproj stamps it into the exe, the
+		  package project into Package.appxmanifest (as Version.0), and
+		  Scripts/build-release.ps1 into the installer and artifact names.
+		- NetScannerVersion / NetScannerSha256: the bundled ns engine and the
+		  SHA-256 of its release windows.zip. Scripts/fetch-ns.ps1 refuses a
+		  download that does not match. Scripts/update-engine.ps1 moves both
+		  (and Version) to the latest engine release; the Engine update
+		  workflow runs it daily and opens a PR.
+		- Package versions shared by the app and the package project.
+	-->
+	<PropertyGroup>
+		<Version>1.1.0</Version>
+		<NetScannerVersion>v1.6.0</NetScannerVersion>
+		<NetScannerSha256>da1f5a92f6305c6f344c433199340dfd4b518917f5491b3a36c00072b5f46b4f</NetScannerSha256>
+
+		<!--
+			Pinned to the release that matches the widely installed 1.8 runtime
+			(8000.946). Newer 1.8 builds refuse to start unpackaged on machines
+			that only have that runtime, so bump it deliberately.
+		-->
+		<WindowsAppSdkVersion>1.8.260804001</WindowsAppSdkVersion>
+		<WindowsSdkBuildToolsVersion>10.0.26100.9169</WindowsSdkBuildToolsVersion>
+		<CommunityToolkitMvvmVersion>8.4.2</CommunityToolkitMvvmVersion>
+	</PropertyGroup>
+</Project>
