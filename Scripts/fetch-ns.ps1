@@ -52,6 +52,7 @@ $ExpectedSha256ByVersion = @{
     "v1.2.2" = "0b843db6e39f24849b6ef47302f7877ccd396022fab500378156445ba716b264"
     "v1.3.0" = "ff857ac662742996a71471c74b3a4e6275dcda7dbc913239cef27a38b9f21e1b"
     "v1.4.0" = "4636bfb26b6bff26f111bddc1dabb4e5377f8b2f08c475be6de3905688c97222"
+    "v1.6.0" = "da1f5a92f6305c6f344c433199340dfd4b518917f5491b3a36c00072b5f46b4f"
 }
 
 $ExePath = Join-Path $OutputDir "ns.exe"

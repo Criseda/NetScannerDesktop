@@ -7,6 +7,7 @@
     xmlns:local="using:NetScannerDesktop.Views"
     xmlns:models="using:NetScannerDesktop.Models"
     xmlns:services="using:NetScannerDesktop.Services"
+    xmlns:vm="using:NetScannerDesktop.ViewModels"
     NavigationCacheMode="Required"
     mc:Ignorable="d">
 
@@ -49,7 +50,7 @@
         <StackPanel Grid.Row="0" Spacing="2">
             <TextBlock Text="Host discovery" Style="{StaticResource TitleTextBlockStyle}" />
             <TextBlock
-                Text="Find live hosts on your local network. A /24 usually takes about 2 seconds."
+                Text="Find live hosts on your local network. A /24 usually takes a second or two."
                 Style="{StaticResource BodyTextBlockStyle}"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 TextWrapping="Wrap" />
@@ -152,8 +153,8 @@
                         ToolTipService.ToolTip="{x:Bind ViewModel.MethodHint, Mode=OneWay}"
                         AutomationProperties.Name="Method"
                         AutomationProperties.HelpText="{x:Bind ViewModel.MethodHint, Mode=OneWay}">
-                        <ComboBoxItem Content="TCP + ARP (fast)" ToolTipService.ToolTip="Fast. Also finds quiet hosts in the ARP table." />
-                        <ComboBoxItem Content="ICMP ping (slow)" ToolTipService.ToolTip="Slower. For networks that filter TCP probes." />
+                        <ComboBoxItem Content="TCP + ARP" ToolTipService.ToolTip="{x:Bind vm:DiscoveryViewModel.DefaultMethodHint}" />
+                        <ComboBoxItem Content="ICMP ping" ToolTipService.ToolTip="{x:Bind vm:DiscoveryViewModel.PingHint}" />
                     </ComboBox>
                 </StackPanel>
 
@@ -335,7 +336,7 @@
                                     Style="{StaticResource TableHeaderButtonStyle}"
                                     Command="{x:Bind ViewModel.SortByCommand}"
                                     CommandParameter="source"
-                                    ToolTipService.ToolTip="How the host answered: TCP probe, the ARP table (quiet on TCP) or ICMP ping"
+                                    ToolTipService.ToolTip="How the host was first seen: TCP probe, mDNS or SSDP reply, the ARP table (quiet on TCP) or ICMP ping"
                                     AutomationProperties.Name="Sort by how the host was found">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Text="Found via" />

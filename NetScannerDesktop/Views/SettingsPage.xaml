@@ -60,7 +60,7 @@
                             Visibility="{x:Bind ViewModel.HasPortRangeError, Mode=OneWay}" />
                     </StackPanel>
                 </toolkit:SettingsCard>
-                <toolkit:SettingsCard Header="Default timeout per port" Description="Milliseconds to wait for each port. Clear it to use the engine default (500 ms).">
+                <toolkit:SettingsCard Header="Default timeout per port" Description="Leave empty for Auto: the wait is learned from each host's answers (100-500 ms). A number fixes the wait in milliseconds, for links slower than 500 ms.">
                     <toolkit:SettingsCard.HeaderIcon>
                         <FontIcon Glyph="&#xE916;" />
                     </toolkit:SettingsCard.HeaderIcon>
@@ -73,7 +73,7 @@
                         MinWidth="160"
                         SpinButtonPlacementMode="Compact"
                         ValidationMode="InvalidInputOverwritten"
-                        PlaceholderText="500"
+                        PlaceholderText="Auto"
                         AutomationProperties.Name="Default timeout in milliseconds" />
                 </toolkit:SettingsCard>
 

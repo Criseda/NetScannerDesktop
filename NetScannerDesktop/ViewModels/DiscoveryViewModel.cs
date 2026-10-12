@@ -161,7 +161,7 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
     [NotifyPropertyChangedFor(nameof(MethodIndex), nameof(MethodHint))]
     private bool usePingFallback;
 
-    /// <summary>Method box index: 0 = TCP + ARP, 1 = ICMP ping.</summary>
+    /// <summary>Method box index: 0 = TCP + multicast + ARP, 1 = ICMP ping.</summary>
     public int MethodIndex
     {
         get => UsePingFallback ? 1 : 0;
@@ -169,8 +169,14 @@ public sealed partial class DiscoveryViewModel : ScanViewModelBase
     }
 
     public string MethodHint => UsePingFallback
-        ? "Slower. For networks that filter TCP probes."
-        : "Fast. Also finds quiet hosts in the ARP table.";
+        ? PingHint
+        : DefaultMethodHint;
+
+    public static string DefaultMethodHint { get; } =
+        "TCP probes plus mDNS, SSDP and the ARP table, so quiet phones, printers and TVs show up too.";
+
+    public static string PingHint { get; } =
+        "One ICMP ping per host. For networks that filter TCP probes; misses devices that drop ping.";
 
     partial void OnUsePingFallbackChanged(bool value) => AppSettings.SetBool(AppSettings.DiscoveryUsePing, value);
 
