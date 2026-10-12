@@ -70,6 +70,26 @@ How a release happens:
 2. Merging any change to `Version` on master runs **Release**, which builds
    the installer and portable zip and creates a draft GitHub release.
 3. Write the notes in the draft and publish it (this creates the tag).
+4. Publishing runs **Store package**, which builds
+   `NetScanner-<version>.msixupload` (x64 + ARM64) as a workflow artifact.
+   Upload it to a new submission in Partner Center. Locally:
+   `pwsh -File Scripts/build-store.ps1`.
+
+## Microsoft Store
+
+The Store build is the MSIX package project, not the installer: the Store
+signs it, delivers updates, and installs the Windows App Runtime it
+depends on. Its identity (`Name`, `Publisher` and `PublisherDisplayName` in
+`Package.appxmanifest`) must match the app reserved in Partner Center
+(Product management > Product identity). Until it does, `build-store.ps1`
+warns and Partner Center rejects the upload.
+
+To try the packaged app locally (Developer Mode on), build the package
+project and register its layout:
+
+```powershell
+Add-AppxPackage -Register "NetScannerDesktop (Package)\bin\x64\Release\AppxManifest.xml"
+```
 
 The app asks for `ns --json` output whenever the engine advertises it, and
 falls back to reading the text output of v1.1–v1.2 engines.
@@ -105,7 +125,8 @@ so bump it deliberately.
 - `Scripts/fetch-ns.ps1` — downloads the pinned `ns.exe`
 - `Scripts/update-engine.ps1` — pins the latest engine release
 - `Scripts/build-release.ps1` — installer and portable zip
-- `.github/workflows/` — CI, Engine update, Release
+- `Scripts/build-store.ps1` — Microsoft Store upload (`.msixupload`)
+- `.github/workflows/` — CI, Engine update, Release, Store package
 - `NetScannerDesktop/Models/` — hosts, host details, ports, scan summaries
 - `NetScannerDesktop/Services/` — engine runner (`NetScannerService`), output
   parser (`EngineOutputParser` in `NetScannerParser.cs`), validation, settings/history storage, CSV export, `FilteredSortedView`

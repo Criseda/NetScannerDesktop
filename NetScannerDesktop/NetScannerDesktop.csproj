@@ -12,12 +12,21 @@
 		<Nullable>enable</Nullable>
 		<!--
 			Lets the raw exe run unpackaged against the installed Windows App
-			Runtime (MddBootstrap); no-op when deployed via MSIX. Never in a
-			self-contained build (the release installer): there it attaches the
-			installed runtime on top of the bundled one and the app fail-fasts in
-			CoreMessagingXP.dll (0xC0000602) before Main.
+			Runtime (MddBootstrap). Never in a self-contained build (the release
+			installer): there it attaches the installed runtime on top of the
+			bundled one and the app fail-fasts in CoreMessagingXP.dll
+			(0xC0000602) before Main.
 		-->
 		<WindowsAppSdkBootstrapInitialize Condition="'$(WindowsAppSDKSelfContained)' != 'true'">true</WindowsAppSdkBootstrapInitialize>
+		<!--
+			Skip the bootstrapper when the app runs from its MSIX package (the
+			Store build): the package already declares the runtime, and the
+			bootstrapper fails there (0x80070032) and the app exits on launch.
+			Setting any option replaces the default, so keep its "runtime
+			missing" prompt for unpackaged runs.
+		-->
+		<WindowsAppSDKBootstrapAutoInitializeOptions_OnPackageIdentity_NoOp>true</WindowsAppSDKBootstrapAutoInitializeOptions_OnPackageIdentity_NoOp>
+		<WindowsAppSDKBootstrapAutoInitializeOptions_OnNoMatch_ShowUI>true</WindowsAppSDKBootstrapAutoInitializeOptions_OnNoMatch_ShowUI>
 		<NoWarn>$(NoWarn);MVVMTK0045</NoWarn>
 	</PropertyGroup>
 
