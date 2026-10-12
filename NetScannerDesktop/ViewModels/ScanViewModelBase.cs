@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using NetScannerDesktop.Models;
 using NetScannerDesktop.Services;
 using Windows.ApplicationModel.DataTransfer;
 
@@ -13,7 +14,7 @@ namespace NetScannerDesktop.ViewModels;
 
 /// <summary>
 /// What the Discovery and Port scan pages share: running one engine scan
-/// at a time with cancel, a ticking status line, the bounded engine log,
+/// at a time with cancel, a ticking status line, the progress bar, the bounded engine log,
 /// the notice InfoBar, and the dialog/save hooks the view provides.
 /// </summary>
 public abstract partial class ScanViewModelBase : ObservableObject
@@ -22,6 +23,8 @@ public abstract partial class ScanViewModelBase : ObservableObject
     private readonly EngineLog log = new();
     private CancellationTokenSource? runningScan;
     private Action? refreshProgress;
+    private Stopwatch? scanStopwatch;
+    private TimeSpan phaseStartedAt;
 
     protected ScanViewModelBase(INetScannerService scanner, string defaultSortColumn)
     {
@@ -58,6 +61,70 @@ public abstract partial class ScanViewModelBase : ObservableObject
 
     public string LogLineCountText => log.LineCountText;
 
+    /// <summary>
+    /// Latest engine progress event of the running scan; null before the
+    /// first one, and always with engines older than v1.5 (no events), when
+    /// the bar stays indeterminate.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsProgressIndeterminate), nameof(ProgressPercent))]
+    private ScanProgress? currentProgress;
+
+    public bool IsProgressIndeterminate => CurrentProgress is null;
+
+    public double ProgressPercent => CurrentProgress?.Percent ?? 0;
+
+    /// <summary>How long the current phase has been running.</summary>
+    protected TimeSpan PhaseElapsed => (scanStopwatch?.Elapsed ?? TimeSpan.Zero) - phaseStartedAt;
+
+    /// <summary>
+    /// Progress&lt;ScanProgress&gt; target. Keeps the latest event: the engine
+    /// may skip counts, and a new phase restarts the bar from its own zero.
+    /// </summary>
+    protected void ReportScanProgress(ScanProgress progress)
+    {
+        if (!IsScanning)
+        {
+            return;
+        }
+
+        if (CurrentProgress is { } current && current.Phase == progress.Phase)
+        {
+            if (progress.Done < current.Done)
+            {
+                return;
+            }
+        }
+        else
+        {
+            phaseStartedAt = scanStopwatch?.Elapsed ?? TimeSpan.Zero;
+        }
+
+        CurrentProgress = progress;
+        RefreshProgress();
+    }
+
+    /// <summary>"42% · about 5s left"-style tail for the status line, or empty.</summary>
+    protected string ProgressStatusPart(bool withRemaining)
+    {
+        if (CurrentProgress is not { } progress)
+        {
+            return string.Empty;
+        }
+
+        string text = progress.Text;
+        if (withRemaining && progress.Remaining(PhaseElapsed) is { } left)
+        {
+            text += $" • about {FormatRemaining(left)} left";
+        }
+
+        return text;
+    }
+
+    private static string FormatRemaining(TimeSpan left) => left.TotalMinutes >= 1
+        ? $"{(int)Math.Ceiling(left.TotalMinutes)} min"
+        : $"{Math.Max(1, (int)Math.Ceiling(left.TotalSeconds))}s";
+
     partial void OnIsScanningChanged(bool value) => OnScanStateChanged();
 
     partial void OnIsEngineMissingChanged(bool value) => OnScanStateChanged();
@@ -85,6 +152,9 @@ public abstract partial class ScanViewModelBase : ObservableObject
         using var cts = new CancellationTokenSource();
         runningScan = cts;
         var stopwatch = Stopwatch.StartNew();
+        scanStopwatch = stopwatch;
+        phaseStartedAt = TimeSpan.Zero;
+        CurrentProgress = null;
         refreshProgress = () => StatusText = progressStatus(stopwatch.Elapsed);
 
         var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
@@ -99,6 +169,7 @@ public abstract partial class ScanViewModelBase : ObservableObject
         }
         catch (OperationCanceledException)
         {
+            // CurrentProgress still holds where it stopped.
             StatusText = cancelledStatus(stopwatch.Elapsed);
         }
         catch (Exception ex)
@@ -110,6 +181,8 @@ public abstract partial class ScanViewModelBase : ObservableObject
         {
             timer.Stop();
             refreshProgress = null;
+            scanStopwatch = null;
+            CurrentProgress = null;
             runningScan = null;
             FlushLog();
             IsScanning = false;

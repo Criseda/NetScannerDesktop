@@ -25,6 +25,9 @@ public sealed record SubnetSummaryEvent(ScanSummary Summary) : EngineEvent;
 
 public sealed record EngineErrorEvent(string Message) : EngineEvent;
 
+/// <summary>How far the current phase has got (NetScanner v1.5+, <c>--json</c> only).</summary>
+public sealed record ProgressEvent(ScanProgress Progress) : EngineEvent;
+
 /// <summary>
 /// Turns engine output lines into <see cref="EngineEvent"/>s. One instance
 /// per scan: text mode is stateful (the <c>--resolve</c> table rows only
@@ -34,7 +37,8 @@ public sealed record EngineErrorEvent(string Message) : EngineEvent;
 /// per line: <c>start</c>, <c>host</c>, <c>host_detail</c>, <c>port</c>,
 /// <c>summary</c>, <c>error</c>. From v1.4.0 <c>port</c> also carries
 /// <c>service</c>, <c>iana</c>, <c>description</c> and <c>category</c>,
-/// and from v1.6.0 <c>host.source</c> can be <c>mdns</c> or <c>ssdp</c>.
+/// From v1.5.0 <c>progress</c> reports each phase's <c>done</c> of
+/// <c>total</c>, and from v1.6.0 <c>host.source</c> can be <c>mdns</c> or <c>ssdp</c>.
 /// Text mode covers v1.1–v1.2 output:
 /// <c>Host 192.168.1.10 is online (arp)</c>, <c>Open port: 80</c>,
 /// <c>Open ports: 80, 443</c>, <c>No open ports found</c>,
@@ -111,6 +115,11 @@ public sealed partial class EngineOutputParser
                         .Select(e => e.TryGetInt32(out int n) ? n : 0).Where(IsPort).Distinct().ToList()),
                 "summary" when root.TryGetProperty("hosts", out JsonElement hosts) && hosts.TryGetInt32(out int count) =>
                     new SubnetSummaryEvent(JsonSummary(root, count)),
+                "progress" when Str(root, "phase") is { Length: > 0 } phase &&
+                                root.TryGetProperty("done", out JsonElement d) && d.TryGetInt64(out long done) &&
+                                root.TryGetProperty("total", out JsonElement t) && t.TryGetInt64(out long total) &&
+                                total > 0 && done >= 0 =>
+                    new ProgressEvent(new ScanProgress(phase, Math.Min(done, total), total)),
                 "error" => new EngineErrorEvent(Str(root, "message") ?? "Engine error"),
                 _ => null,
             };

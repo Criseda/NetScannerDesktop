@@ -219,6 +219,40 @@ public class EngineOutputParserJsonTests
     }
 
     [Fact]
+    public void Progress_events_carry_phase_and_counts()
+    {
+        // Shape from NetScanner v1.5.0 docs; done is capped at total.
+        var events = ParseAll("""
+            {"type":"progress","phase":"sweep","done":120,"total":254}
+            {"type":"progress","phase":"identify","done":3,"total":9}
+            {"type":"progress","phase":"ports","done":2000,"total":1024}
+            {"type":"progress","phase":"sweep","done":1,"total":0}
+            {"type":"progress","done":1,"total":2}
+            {"type":"progress","phase":"sweep","done":-1,"total":2}
+            """);
+
+        Assert.Equal(
+            [new ScanProgress("sweep", 120, 254), new ScanProgress("identify", 3, 9), new ScanProgress("ports", 1024, 1024)],
+            events.OfType<ProgressEvent>().Select(e => e.Progress));
+    }
+
+    [Fact]
+    public void Progress_text_and_time_left()
+    {
+        var sweep = new ScanProgress(ScanProgress.SweepPhase, 120, 254);
+        Assert.Equal("47%", sweep.Text);
+        Assert.Equal(100.0 * 120 / 254, sweep.Percent, precision: 6);
+        Assert.Equal("3 of 9", new ScanProgress(ScanProgress.IdentifyPhase, 3, 9).Text);
+        Assert.Equal("99%", new ScanProgress(ScanProgress.PortsPhase, 999, 1000).Text);
+
+        var ports = new ScanProgress(ScanProgress.PortsPhase, 250, 1000);
+        Assert.Equal(TimeSpan.FromSeconds(9), ports.Remaining(TimeSpan.FromSeconds(3)));
+        Assert.Null(ports.Remaining(TimeSpan.FromSeconds(1)));
+        Assert.Null(new ScanProgress(ScanProgress.PortsPhase, 10, 1000).Remaining(TimeSpan.FromSeconds(5)));
+        Assert.Null(new ScanProgress(ScanProgress.PortsPhase, 1000, 1000).Remaining(TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
     public void Escaped_strings_are_decoded()
     {
         var detail = Assert.Single(ParseAll(

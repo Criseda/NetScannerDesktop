@@ -253,11 +253,14 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
         });
 
         await RunScanAsync(
-            elapsed => $"Scanning {target} • {FormatElapsed(elapsed)} • {PortCountTitle}…",
+            elapsed => CurrentProgress is null
+                ? $"Scanning {target} • {FormatElapsed(elapsed)} • {PortCountTitle}…"
+                : $"Scanning {target} • {ProgressStatusPart(withRemaining: true)} • {FormatElapsed(elapsed)} • {PortCountTitle}…",
             async (token, stopwatch) =>
             {
                 PortScanResult result = await Scanner.ScanPortsAsync(
-                    target, start, end, portProgress, new Progress<string>(AppendLogLine), token, timeout);
+                    target, start, end, portProgress, new Progress<string>(AppendLogLine), token, timeout,
+                    new Progress<ScanProgress>(ReportScanProgress));
 
                 resultTarget = target;
                 string total = FormatElapsed(stopwatch.Elapsed);
@@ -267,7 +270,9 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
 
                 ScanHistoryService.Record(target, range, OpenPorts);
             },
-            elapsed => $"Cancelled after {FormatElapsed(elapsed)} — {PortCountTitle} found.");
+            elapsed => CurrentProgress is { } at
+                ? $"Cancelled after {FormatElapsed(elapsed)} at {at.Text} of {range} — {PortCountTitle} found."
+                : $"Cancelled after {FormatElapsed(elapsed)} — {PortCountTitle} found.");
 
         NotifyEmptyStateChanged();
     }
