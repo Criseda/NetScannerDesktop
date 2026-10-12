@@ -33,7 +33,8 @@ public sealed record EngineErrorEvent(string Message) : EngineEvent;
 /// JSON mode (<c>--json</c>, NetScanner v1.3.0+) reads one object
 /// per line: <c>start</c>, <c>host</c>, <c>host_detail</c>, <c>port</c>,
 /// <c>summary</c>, <c>error</c>. From v1.4.0 <c>port</c> also carries
-/// <c>service</c>, <c>iana</c>, <c>description</c> and <c>category</c>.
+/// <c>service</c>, <c>iana</c>, <c>description</c> and <c>category</c>,
+/// and from v1.6.0 <c>host.source</c> can be <c>mdns</c> or <c>ssdp</c>.
 /// Text mode covers v1.1–v1.2 output:
 /// <c>Host 192.168.1.10 is online (arp)</c>, <c>Open port: 80</c>,
 /// <c>Open ports: 80, 443</c>, <c>No open ports found</c>,
@@ -52,7 +53,8 @@ public sealed partial class EngineOutputParser
 
     /// <param name="json">Lines are <c>--json</c> events rather than text.</param>
     /// <param name="textHostSource">
-    /// Source label for text-mode hosts not tagged "(arp)": text output
+    /// Source label for untagged text-mode hosts (tagged ones, e.g. "(arp)",
+    /// name their own source): text output
     /// prints ping hits exactly like TCP hits, so the caller says which
     /// sweep ran. JSON events name their source themselves.
     /// </param>
@@ -134,18 +136,25 @@ public sealed partial class EngineOutputParser
             string.Create(CultureInfo.InvariantCulture, $"{hostCount} {noun} up ({elapsed.TotalSeconds:F1}s)"), elapsed);
     }
 
+    /// <summary>
+    /// Display label for <c>host.source</c>. The engine may add sources, so
+    /// an unknown one shows as its own name rather than being passed off as TCP.
+    /// </summary>
     private static string SourceLabel(string? source) => source switch
     {
+        null or "" or "tcp" => "TCP",
         "arp" => "ARP",
         "ping" => "Ping",
-        _ => "TCP",
+        "mdns" => "mDNS",
+        "ssdp" => "SSDP",
+        _ => source.ToUpperInvariant(),
     };
 
     private static bool IsPort(int port) => port is >= 1 and <= 65535;
 
     // Text -----------------------------------------------------------------
 
-    [GeneratedRegex(@"^Host (?<ip>\d{1,3}(?:\.\d{1,3}){3}) is online(?<arp> \(arp\))?$")]
+    [GeneratedRegex(@"^Host (?<ip>\d{1,3}(?:\.\d{1,3}){3}) is online(?: \((?<source>[a-z]+)\))?$")]
     private static partial Regex HostLine();
 
     [GeneratedRegex(@"^(?<count>\d+) hosts? up \((?<secs>[\d.]+)s\)$")]
@@ -179,7 +188,9 @@ public sealed partial class EngineOutputParser
         if (HostLine().Match(line) is { Success: true } host && NetworkValidation.IsValidIpv4(host.Groups["ip"].Value))
         {
             return new HostFoundEvent(new HostResult(
-                host.Groups["ip"].Value, host.Groups["arp"].Success ? "ARP" : textHostSource, DateTime.Now));
+                host.Groups["ip"].Value,
+                host.Groups["source"].Success ? SourceLabel(host.Groups["source"].Value) : textHostSource,
+                DateTime.Now));
         }
 
         if (OpenPortLine().Match(line) is { Success: true } open &&

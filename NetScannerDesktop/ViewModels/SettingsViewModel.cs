@@ -51,7 +51,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     public string CrashLogPath => App.CrashLogPath;
 
     private static double ReadTimeout() =>
-        double.TryParse(AppSettings.GetString(AppSettings.DefaultTimeout, "500"),
+        double.TryParse(AppSettings.GetString(AppSettings.DefaultTimeout),
             NumberStyles.Integer, CultureInfo.InvariantCulture, out double t) ? t : double.NaN;
 
     partial void OnSelectedThemeIndexChanged(int value)

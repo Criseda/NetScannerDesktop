@@ -40,7 +40,7 @@
         <StackPanel Grid.Row="0" Spacing="2">
             <TextBlock Text="Port scan" Style="{StaticResource TitleTextBlockStyle}" />
             <TextBlock
-                Text="Probe one host for open TCP ports. A 1-1024 sweep usually takes a few seconds."
+                Text="Probe one host for open TCP ports. A 1-1024 sweep usually takes about a second."
                 Style="{StaticResource BodyTextBlockStyle}"
                 Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                 TextWrapping="Wrap" />
@@ -138,8 +138,8 @@
                         LargeChange="500"
                         SpinButtonPlacementMode="Compact"
                         ValidationMode="InvalidInputOverwritten"
-                        PlaceholderText="500"
-                        ToolTipService.ToolTip="Wait per port. Raise on slow networks, lower on fast LANs. Empty = 500."
+                        PlaceholderText="Auto"
+                        ToolTipService.ToolTip="Wait per port. Empty = Auto: learned from the host's answers (100-500 ms), with a second try for unanswered ports. A number fixes the wait, with no second try; raise it for links slower than 500 ms."
                         AutomationProperties.Name="Timeout per port in milliseconds" />
                 </StackPanel>
 

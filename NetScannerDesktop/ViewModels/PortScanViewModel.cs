@@ -115,9 +115,12 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
     [ObservableProperty]
     private string portRange = "1-1024";
 
-    /// <summary>NumberBox value; NaN (cleared box) means the engine default.</summary>
+    /// <summary>
+    /// NumberBox value; NaN (cleared box) is Auto: no <c>--timeout</c>, so
+    /// v1.5+ engines learn the wait from the host's answers.
+    /// </summary>
     [ObservableProperty]
-    private double timeoutMs = 500;
+    private double timeoutMs = double.NaN;
 
     public ObservableCollection<string> RecentIps { get; } = new();
 
@@ -154,7 +157,7 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
         ? $"None of the {PortCountTitle} match “{FilterText.Trim()}”."
         : resultTarget is null
             ? "Enter a host, or pick one from Discovery, to probe it for open TCP services."
-            : $"Every port scanned on {resultTarget} was closed or filtered. Try a wider range or a longer timeout.";
+            : $"Every port scanned on {resultTarget} was closed or filtered. Try a wider range, or a longer timeout on slow links.";
 
     private void NotifyEmptyStateChanged()
     {
@@ -186,7 +189,7 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
 
     public bool HasPortRangeError => !string.IsNullOrEmpty(PortRangeErrorText);
 
-    /// <summary>Engine value for --timeout: null (engine default) when the box is cleared.</summary>
+    /// <summary>Engine value for --timeout: null (Auto) when the box is cleared.</summary>
     private int? TimeoutArgument => double.IsNaN(TimeoutMs) ? null : (int)Math.Clamp(TimeoutMs, 1, 60000);
 
     public bool CanScan => !IsScanning
@@ -384,7 +387,7 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
         string savedTimeout = AppSettings.GetString(AppSettings.PortTimeout);
         if (string.IsNullOrWhiteSpace(savedTimeout))
         {
-            savedTimeout = AppSettings.GetString(AppSettings.DefaultTimeout, "500");
+            savedTimeout = AppSettings.GetString(AppSettings.DefaultTimeout);
         }
 
         TimeoutMs = double.TryParse(savedTimeout, NumberStyles.Integer, CultureInfo.InvariantCulture, out double t)

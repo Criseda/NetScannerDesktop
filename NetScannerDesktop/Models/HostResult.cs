@@ -8,8 +8,8 @@ namespace NetScannerDesktop.Models;
 
 /// <summary>
 /// One live host found by <c>ns -s</c>.
-/// <see cref="Source"/> says how it was found: TCP probe, ARP harvest (the
-/// host was quiet on TCP) or ICMP ping. Hostname, MAC and vendor arrive
+/// <see cref="Source"/> says how it was first seen: TCP probe, mDNS or SSDP
+/// reply, ARP harvest (the host was quiet on TCP) or ICMP ping. Hostname, MAC and vendor arrive
 /// later, after the sweep, when device identification is on. Also tracks
 /// the open ports if this host has been port scanned.
 /// </summary>

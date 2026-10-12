@@ -33,6 +33,7 @@ namespace NetScannerDesktop
         {
             try
             {
+                NetScannerDesktop.Services.AppSettings.MigrateDefaultTimeouts();
                 m_window = new MainWindow();
                 m_window.Activate();
             }

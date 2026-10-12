@@ -169,6 +169,31 @@ public static class AppSettings
         SetString(key, string.Join("|", list.Take(MaxRecent)));
     }
 
+    /// <summary>
+    /// Clears port timeouts saved as 500, once. Up to v1.1 that was the
+    /// prefilled default and every scan saved it, but from engine v1.5 an
+    /// explicit <c>--timeout 500</c> turns off the learned wait, so a
+    /// leftover default would keep scans slow forever. 500 was also what
+    /// older engines did with no flag, so clearing it changes nothing there.
+    /// </summary>
+    public static void MigrateDefaultTimeouts()
+    {
+        if (GetBool(MigratedAutoTimeout))
+        {
+            return;
+        }
+
+        foreach (string key in new[] { PortTimeout, DefaultTimeout })
+        {
+            if (GetString(key).Trim() == "500")
+            {
+                SetString(key, string.Empty);
+            }
+        }
+
+        SetBool(MigratedAutoTimeout, true);
+    }
+
     // Well-known keys -----------------------------------------------------
 
     public const string DiscoverySubnet = "discovery.subnet";
@@ -183,6 +208,7 @@ public static class AppSettings
 
     public const string DefaultPortRange = "defaults.portRange";
     public const string DefaultTimeout = "defaults.timeoutMs";
+    public const string MigratedAutoTimeout = "defaults.migratedAutoTimeout";
 
     public const string AppTheme = "app.theme"; // 0=default, 1=light, 2=dark
     public const string SeenTeachingTip = "app.seenTeachingTip";

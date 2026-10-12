@@ -12,7 +12,7 @@ using NetScannerDesktop.Models;
 namespace NetScannerDesktop.Services;
 
 /// <summary>What to ask <c>ns -s</c> for.</summary>
-/// <param name="UsePing">ICMP ping sweep (<c>--ping</c>) instead of TCP + ARP.</param>
+/// <param name="UsePing">ICMP ping sweep (<c>--ping</c>) instead of TCP + multicast + ARP.</param>
 /// <param name="Resolve">Hostnames, MACs and vendors (<c>--resolve</c>); ignored by engines without it.</param>
 public sealed record SubnetScanOptions(bool UsePing, bool Resolve);
 

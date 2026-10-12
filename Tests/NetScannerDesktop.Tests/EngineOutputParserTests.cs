@@ -205,6 +205,20 @@ public class EngineOutputParserJsonTests
     }
 
     [Fact]
+    public void Multicast_and_unknown_sources_keep_their_own_label()
+    {
+        // v1.6.0 adds mdns and ssdp; the engine docs say more may follow.
+        var events = ParseAll("""
+            {"type":"host","ip":"192.168.1.20","source":"mdns"}
+            {"type":"host","ip":"192.168.1.21","source":"ssdp"}
+            {"type":"host","ip":"192.168.1.22","source":"llmnr"}
+            {"type":"host","ip":"192.168.1.23"}
+            """);
+
+        Assert.Equal(["mDNS", "SSDP", "LLMNR", "TCP"], events.OfType<HostFoundEvent>().Select(e => e.Host.Source));
+    }
+
+    [Fact]
     public void Escaped_strings_are_decoded()
     {
         var detail = Assert.Single(ParseAll(
