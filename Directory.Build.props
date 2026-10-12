@@ -15,7 +15,7 @@
 		- Package versions shared by the app and the package project.
 	-->
 	<PropertyGroup>
-		<Version>1.1.0</Version>
+		<Version>1.2.0</Version>
 		<NetScannerVersion>v1.6.0</NetScannerVersion>
 		<NetScannerSha256>da1f5a92f6305c6f344c433199340dfd4b518917f5491b3a36c00072b5f46b4f</NetScannerSha256>
 
