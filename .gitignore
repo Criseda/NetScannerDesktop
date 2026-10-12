@@ -185,6 +185,10 @@ publish/
 # Note: Comment the next line if you want to checkin your web deploy settings,
 # but database connection strings (with potential passwords) will be unencrypted
 *.pubxml
+# Except the app's: the MSIX package project publishes the app through them
+# (win-<platform>.pubxml), and without them the Store build has no runtime
+# identifier and fails (NETSDK1094).
+!NetScannerDesktop/Properties/PublishProfiles/*.pubxml
 *.publishproj
 
 # Microsoft Azure Web App publish settings. Comment the next line if you want to
