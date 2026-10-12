@@ -1,0 +1,43 @@
+# Builds the Microsoft Store upload (.msixupload, x64 + ARM64) and keeps it
+# as a workflow artifact: download it from the run and upload it to the
+# submission in Partner Center. Runs for every published release, on
+# demand, and on PRs that touch the packaging.
+
+name: Store package
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "NetScannerDesktop (Package)/**"
+      - NetScannerDesktop/NetScannerDesktop.csproj
+      - Directory.Build.props
+      - Scripts/build-store.ps1
+      - .github/workflows/store.yml
+
+permissions:
+  contents: read
+
+jobs:
+  store:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # A release builds what was released.
+          ref: ${{ github.event.release.tag_name || github.ref }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Build Store package
+        run: pwsh -File Scripts/build-store.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-package
+          path: artifacts/store/*.msixupload
+          if-no-files-found: error
