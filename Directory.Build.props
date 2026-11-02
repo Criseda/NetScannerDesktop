@@ -16,8 +16,8 @@
 	-->
 	<PropertyGroup>
 		<Version>1.3.0</Version>
-		<NetScannerVersion>v1.7.0</NetScannerVersion>
-		<NetScannerSha256>99d12e3e68780d8c06afbe4ddbac43ee592c6925980f83f24a3119a5cde4a2ab</NetScannerSha256>
+		<NetScannerVersion>v1.8.0</NetScannerVersion>
+		<NetScannerSha256>474f1a3a99d7b2b4f80da214376091760b2ddb60b8e6fbe6b298618e3eb07e1d</NetScannerSha256>
 
 		<!--
 			Pinned to the release that matches the widely installed 1.8 runtime
