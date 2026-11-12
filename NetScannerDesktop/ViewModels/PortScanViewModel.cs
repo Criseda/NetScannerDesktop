@@ -24,7 +24,8 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
 
     private readonly FilteredSortedView<PortResult> portView = new(ByPort);
 
-    public const int LargePortScanConfirmThreshold = 10000;
+    /// <summary>Port range used until the user picks another, here or in Settings.</summary>
+    public const string DefaultPortRange = "1-65535";
 
     /// <summary>Range presets offered next to the port range box.</summary>
     public static IReadOnlyList<PortRangePreset> Presets { get; } =
@@ -113,7 +114,7 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
     private string ipAddress = string.Empty;
 
     [ObservableProperty]
-    private string portRange = "1-1024";
+    private string portRange = DefaultPortRange;
 
     /// <summary>
     /// NumberBox value; NaN (cleared box) is Auto: no <c>--timeout</c>, so
@@ -228,18 +229,20 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
             return;
         }
 
-        int portCount = end - start + 1;
-        if (portCount > LargePortScanConfirmThreshold && ConfirmLargeScanAsync is not null &&
-            !await ConfirmLargeScanAsync($"This will probe {portCount:N0} ports and may take a while. Continue?"))
+        // Progress, time left and Cancel already cover a normal scan, even
+        // all 65,535 ports. Only a fixed timeout can make one really slow.
+        int? timeout = TimeoutArgument;
+        if (ScanEstimate.SlowPortScanWarning(end - start + 1, timeout) is { } warning &&
+            ConfirmLargeScanAsync is not null &&
+            !await ConfirmLargeScanAsync(warning))
         {
-            StatusText = "Large scan not started.";
+            StatusText = "Slow scan not started.";
             return;
         }
 
         ClearPorts();
         string target = IpAddress.Trim();
         string range = $"{start}-{end}";
-        int? timeout = TimeoutArgument;
         AppSettings.SetString(AppSettings.PortIp, target);
         AppSettings.SetString(AppSettings.PortRange, range);
         AppSettings.SetString(AppSettings.PortTimeout, timeout?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
@@ -367,7 +370,7 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
         }
         else
         {
-            PortRange = AppSettings.GetString(AppSettings.DefaultPortRange, "1-1024");
+            PortRange = AppSettings.GetString(AppSettings.DefaultPortRange, DefaultPortRange);
             resultTarget = null;
             StatusText = $"Ready to scan {cleanIp}. Press Scan or F5.";
         }
@@ -409,7 +412,7 @@ public sealed partial class PortScanViewModel : ScanViewModelBase
             }
             else
             {
-                PortRange = AppSettings.GetString(AppSettings.DefaultPortRange, "1-1024");
+                PortRange = AppSettings.GetString(AppSettings.DefaultPortRange, DefaultPortRange);
             }
         }
 

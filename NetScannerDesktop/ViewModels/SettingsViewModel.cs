@@ -24,7 +24,7 @@ public sealed partial class SettingsViewModel : ObservableObject
     private int selectedThemeIndex = AppSettings.GetInt(AppSettings.AppTheme, 0);
 
     [ObservableProperty]
-    private string defaultPortRange = AppSettings.GetString(AppSettings.DefaultPortRange, "1-1024");
+    private string defaultPortRange = AppSettings.GetString(AppSettings.DefaultPortRange, PortScanViewModel.DefaultPortRange);
 
     [ObservableProperty]
     private double defaultTimeoutMs = ReadTimeout();

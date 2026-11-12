@@ -18,11 +18,11 @@ internal static class PageHelpers
 {
     public static MainWindow? Shell => (Application.Current as App)?.MainAppWindow;
 
-    public static async Task<bool> ConfirmLargeScanAsync(XamlRoot root, string message)
+    public static async Task<bool> ConfirmLargeScanAsync(XamlRoot root, string message, string title = "Large scan")
     {
         var dialog = new ContentDialog
         {
-            Title = "Large scan",
+            Title = title,
             Content = message,
             PrimaryButtonText = "Scan anyway",
             CloseButtonText = "Cancel",
