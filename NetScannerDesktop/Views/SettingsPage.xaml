@@ -50,7 +50,7 @@
                     <StackPanel Spacing="4" MinWidth="160">
                         <TextBox
                             Text="{x:Bind ViewModel.DefaultPortRange, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            PlaceholderText="1-1024"
+                            PlaceholderText="1-65535"
                             AutomationProperties.Name="Default port range"
                             AutomationProperties.HelpText="{x:Bind ViewModel.PortRangeError, Mode=OneWay}" />
                         <TextBlock

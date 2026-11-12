@@ -22,6 +22,7 @@
 		<Compile Include="$(AppDir)Services\Csv.cs" Link="App\Csv.cs" />
 		<Compile Include="$(AppDir)Services\TableSort.cs" Link="App\TableSort.cs" />
 		<Compile Include="$(AppDir)Services\TextTable.cs" Link="App\TextTable.cs" />
+		<Compile Include="$(AppDir)Services\ScanEstimate.cs" Link="App\ScanEstimate.cs" />
 		<Compile Include="$(AppDir)Models\*.cs" Link="App\Models\%(Filename)%(Extension)" />
 	</ItemGroup>
 

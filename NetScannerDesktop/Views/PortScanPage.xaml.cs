@@ -27,7 +27,7 @@ public sealed partial class PortScanPage : Page, IResponsivePage
         InitializeComponent();
         Loaded += (_, _) => ApplyLayoutMode();
         PageHelpers.FitTableToViewport(PortsTableScroller, PortsTable, PortsTableMinWidth);
-        ViewModel.ConfirmLargeScanAsync = message => PageHelpers.ConfirmLargeScanAsync(XamlRoot, message);
+        ViewModel.ConfirmLargeScanAsync = message => PageHelpers.ConfirmLargeScanAsync(XamlRoot, message, "Slow scan");
         ViewModel.SaveFileAsync = PageHelpers.SaveFileAsync;
 
         // Page is cached; keep the badge live while a scan runs in the background.
