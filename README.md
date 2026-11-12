@@ -67,8 +67,10 @@ How a release happens:
    NetScanner release and opens a PR that pins it and bumps `Version`
    (engine patch → app patch, otherwise app minor). Locally:
    `pwsh -File Scripts/update-engine.ps1`.
-2. Merging any change to `Version` on master runs **Release**, which builds
-   the installer and portable zip and creates a draft GitHub release.
+2. Every push to master runs **Release**. While master's `Version` is not
+   published, it builds the installer and portable zip into a draft GitHub
+   release, and rebuilds that draft whenever master moves on, keeping the
+   "What's New" notes written so far. A published version is left alone.
 3. Write the notes in the draft and publish it (this creates the tag).
 4. Publishing runs **Store package**, which builds
    `NetScanner-<version>.msixupload` (x64 + ARM64) as a workflow artifact.
