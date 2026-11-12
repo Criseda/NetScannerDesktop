@@ -1,13 +1,19 @@
-# Builds a draft GitHub release whenever master carries an app version
-# (<Version> in Directory.Build.props) that has no release yet. Write the
-# notes in the draft, then publish it; publishing creates the v<Version> tag.
+# Keeps a draft GitHub release in step with master whenever master carries
+# an app version (<Version> in Directory.Build.props) that is not published
+# yet. Write the notes in the draft, then publish it; publishing creates the
+# v<Version> tag.
+#
+# Every push to master runs this, not only version bumps: a draft built from
+# an older commit is rebuilt, so publishing it never ships an older engine or
+# app than master has. Engine v1.8.0 once landed under an unpublished 1.3.0
+# whose draft still held the v1.7.0 build. The notes already written in the
+# draft's "What's New" are kept. Published releases are never touched.
 
 name: Release
 
 on:
   push:
     branches: [master]
-    paths: [Directory.Build.props]
   workflow_dispatch:
 
 permissions:
@@ -32,42 +38,66 @@ jobs:
           $engine = $group.NetScannerVersion | Where-Object { $_ } | Select-Object -First 1
           "app=$version" >> $env:GITHUB_OUTPUT
           "engine=$engine" >> $env:GITHUB_OUTPUT
-          # Drafts included: a second push must not make a second draft.
-          $known = gh release list --limit 100 --json tagName --jq '.[].tagName'
-          "exists=$(if ($known -contains "v$version") { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
+
+          # Drafts included (they carry the tag they will create): a second
+          # push must not make a second draft. The REST API, unlike
+          # `gh release list`, says which commit each draft was built from.
+          $json = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw "Could not list releases." }
+          $release = $json | ConvertFrom-Json | Where-Object { $_.tag_name -eq "v$version" } | Select-Object -First 1
+          $state =
+            if (-not $release) { 'none' }
+            elseif (-not $release.draft) { 'published' }
+            elseif ($release.target_commitish -ne $env:GITHUB_SHA) { 'stale' }
+            else { 'current' }
+          Write-Host "v${version}: $state"
+          "state=$state" >> $env:GITHUB_OUTPUT
+          "build=$(if ($state -in 'none', 'stale') { 'true' } else { 'false' })" >> $env:GITHUB_OUTPUT
 
       - uses: actions/setup-dotnet@v4
-        if: steps.version.outputs.exists == 'false'
+        if: steps.version.outputs.build == 'true'
         with:
           dotnet-version: 9.0.x
 
       - name: Install Inno Setup
-        if: steps.version.outputs.exists == 'false'
+        if: steps.version.outputs.build == 'true'
         run: choco install innosetup --no-progress -y
 
       - name: Test
-        if: steps.version.outputs.exists == 'false'
+        if: steps.version.outputs.build == 'true'
         run: dotnet test Tests/NetScannerDesktop.Tests
 
       - name: Build installer and portable zip
-        if: steps.version.outputs.exists == 'false'
+        if: steps.version.outputs.build == 'true'
         run: pwsh -File Scripts/build-release.ps1
 
-      - name: Create draft release
-        if: steps.version.outputs.exists == 'false'
+      - name: Create or refresh draft release
+        if: steps.version.outputs.build == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $v = "${{ steps.version.outputs.app }}"
           $engine = "${{ steps.version.outputs.engine }}"
+          $stale = "${{ steps.version.outputs.state }}" -eq 'stale'
           $previous = gh release list --exclude-drafts --limit 1 --json tagName --jq '.[0].tagName'
           $sums = Get-Content artifacts/SHA256SUMS.txt -Raw
+
+          # A stale draft keeps its "What's New", up to the next heading.
+          # The rest of the notes names the engine and the checksums, so it
+          # is written afresh.
+          $whatsNew = "### What's New`n- TODO"
+          if ($stale) {
+            $old = gh release view "v$v" --json body --jq .body | Out-String
+            if ($LASTEXITCODE -ne 0) { throw "Could not read the draft's notes." }
+            $m = [regex]::Match($old, "(?ms)^### What's New\b.*?(?=^### |\z)")
+            if ($m.Success) { $whatsNew = $m.Value.Trim() }
+          }
+
           $notes = @"
           Powered by the [NetScanner](https://github.com/Criseda/NetScanner) engine [$engine](https://github.com/Criseda/NetScanner/releases/tag/$engine).
 
-          ### What's New
-          - TODO
+          $whatsNew
 
           ### Download
           - **``NetScanner-Setup-$v-x64.exe``** (recommended): installs for your user account only, with no admin prompt. Upgrades an earlier version in place and keeps your settings and scan history.
@@ -84,5 +114,14 @@ jobs:
 
           **Full changelog**: https://github.com/Criseda/NetScannerDesktop/compare/$previous...v$v
           "@
-          gh release create "v$v" --draft --target $env:GITHUB_SHA --title "NetScanner $v" --notes $notes `
-            "artifacts/NetScanner-Setup-$v-x64.exe" "artifacts/NetScanner-$v-x64-portable.zip" artifacts/SHA256SUMS.txt
+          $assets = "artifacts/NetScanner-Setup-$v-x64.exe", "artifacts/NetScanner-$v-x64-portable.zip", "artifacts/SHA256SUMS.txt"
+
+          if ($stale) {
+            # Files first, the target commit last: if anything fails in
+            # between, the draft still looks stale and the next run redoes it.
+            gh release upload "v$v" @assets --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Could not upload the new build to the draft." }
+            gh release edit "v$v" --target $env:GITHUB_SHA --notes $notes
+          } else {
+            gh release create "v$v" --draft --target $env:GITHUB_SHA --title "NetScanner $v" --notes $notes @assets
+          }
